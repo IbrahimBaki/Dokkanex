@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
+import logoMark from '/icons/logo-mark.png'
 
 function useInView(threshold = 0.15) {
   const ref = useRef(null)
@@ -102,7 +103,7 @@ function HeroSection() {
         {/* Logo */}
         <div className="flex justify-center mb-8">
           <div className="w-20 h-20 rounded-2xl bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center shadow-2xl">
-            <img src="/icons/logo-mark.png" alt="دكانيكس" className="w-14 h-14 object-contain" />
+            <img src={logoMark} alt="دكانيكس" className="w-14 h-14 object-contain" />
           </div>
         </div>
 
@@ -257,7 +258,7 @@ function Footer() {
         <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
           {/* Brand */}
           <div className="flex items-center gap-3">
-            <img src="/icons/logo-mark.png" alt="دكانيكس" className="w-8 h-8 object-contain" />
+            <img src={logoMark} alt="دكانيكس" className="w-8 h-8 object-contain" />
             <span className="font-bold text-white text-lg">دكانيكس</span>
           </div>
 
