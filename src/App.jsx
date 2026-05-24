@@ -1,27 +1,37 @@
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
+import { useAuth } from './context/AuthContext'
 import PrivateLayout from './components/PrivateLayout'
 import PublicRoute from './components/PublicRoute'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
+import LandingPage from './pages/LandingPage'
 import ProductsPage from './pages/ProductsPage'
 import AddProductPage from './pages/AddProductPage'
 import EditProductPage from './pages/EditProductPage'
 import CategoriesPage from './pages/CategoriesPage'
+
+function RootRoute() {
+  const { user, loading } = useAuth()
+  if (loading) return null
+  if (user) return <Navigate to="/products" replace />
+  return <LandingPage />
+}
 
 export default function App() {
   return (
     <HashRouter>
       <AuthProvider>
         <Routes>
+          <Route path="/" element={<RootRoute />} />
           <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
           <Route path="/register" element={<PublicRoute><RegisterPage /></PublicRoute>} />
           <Route element={<PrivateLayout />}>
-            <Route path="/" element={<ProductsPage />} />
+            <Route path="/products" element={<ProductsPage />} />
             <Route path="/add" element={<AddProductPage />} />
             <Route path="/edit/:id" element={<EditProductPage />} />
             <Route path="/categories" element={<CategoriesPage />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path="*" element={<Navigate to="/products" replace />} />
           </Route>
         </Routes>
       </AuthProvider>

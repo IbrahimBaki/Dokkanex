@@ -8,7 +8,7 @@ export default function AddProductPage() {
     <div className="page-container">
       <div className="flex items-center gap-3 mb-6">
         <button
-          onClick={() => navigate('/')}
+          onClick={() => navigate('/products')}
           className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center hover:bg-slate-200 transition-colors"
         >
           <svg className="w-4 h-4 text-slate-600 rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -20,8 +20,8 @@ export default function AddProductPage() {
 
       <div className="card p-5">
         <ProductForm
-          onSuccess={() => navigate('/')}
-          onCancel={() => navigate('/')}
+          onSuccess={() => navigate('/products')}
+          onCancel={() => navigate('/products')}
         />
       </div>
     </div>

@@ -15,7 +15,7 @@ export default function PublicRoute({ children }) {
     )
   }
 
-  if (user) return <Navigate to="/" replace />
+  if (user) return <Navigate to="/products" replace />
 
   return children
 }

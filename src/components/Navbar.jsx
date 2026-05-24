@@ -28,8 +28,7 @@ export default function Navbar() {
             الفئات
           </NavLink>
           <NavLink
-            to="/"
-            end
+            to="/products"
             className={({ isActive }) =>
               `px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                 isActive
