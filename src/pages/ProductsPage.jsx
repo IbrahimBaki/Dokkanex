@@ -79,12 +79,21 @@ export default function ProductsPage() {
   }
 
   async function fetchProducts() {
-    const { data, error } = await supabase
-      .from('products')
-      .select('*')
-      .order('created_at', { ascending: false })
-    if (error) setError('فشل تحميل المنتجات')
-    else setProducts(data || [])
+    const PAGE = 1000
+    let all = []
+    let from = 0
+    while (true) {
+      const { data, error } = await supabase
+        .from('products')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .range(from, from + PAGE - 1)
+      if (error) { setError('فشل تحميل المنتجات'); return }
+      if (data) all = all.concat(data)
+      if (!data || data.length < PAGE) break
+      from += PAGE
+    }
+    setProducts(all)
   }
 
   async function fetchCategories() {
