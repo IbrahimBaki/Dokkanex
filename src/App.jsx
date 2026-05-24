@@ -3,6 +3,7 @@ import { AuthProvider } from './context/AuthContext'
 import { useAuth } from './context/AuthContext'
 import PrivateLayout from './components/PrivateLayout'
 import PublicRoute from './components/PublicRoute'
+import OfflineNotice from './components/OfflineNotice'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import LandingPage from './pages/LandingPage'
@@ -21,6 +22,7 @@ function RootRoute() {
 export default function App() {
   return (
     <HashRouter>
+      <OfflineNotice />
       <AuthProvider>
         <Routes>
           <Route path="/" element={<RootRoute />} />
