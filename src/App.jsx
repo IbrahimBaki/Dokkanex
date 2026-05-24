@@ -11,6 +11,7 @@ import ProductsPage from './pages/ProductsPage'
 import AddProductPage from './pages/AddProductPage'
 import EditProductPage from './pages/EditProductPage'
 import CategoriesPage from './pages/CategoriesPage'
+import DashboardPage from './pages/DashboardPage'
 
 function RootRoute() {
   const { user, loading } = useAuth()
@@ -33,6 +34,7 @@ export default function App() {
             <Route path="/add" element={<AddProductPage />} />
             <Route path="/edit/:id" element={<EditProductPage />} />
             <Route path="/categories" element={<CategoriesPage />} />
+            <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="*" element={<Navigate to="/products" replace />} />
           </Route>
         </Routes>
