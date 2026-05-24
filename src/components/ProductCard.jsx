@@ -89,6 +89,9 @@ export default function ProductCard({ product, categoryName, categoryId, onEdit,
               {product.selling_price}
               <span className="text-xs font-normal text-emerald-500 mr-1">سعر البيع</span>
             </p>
+            <p className="text-[10px] text-slate-400 leading-none mt-0.5">
+              آخر تعديل: {timeAgo(product.updated_at || product.created_at)}
+            </p>
           </div>
 
           {/* Actions */}
