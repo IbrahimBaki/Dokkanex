@@ -34,7 +34,7 @@ function createWindow() {
 
   if (IS_PACKAGED) {
     // Load the compiled React app from dist/
-    win.loadFile(path.join(app.getAppPath(), 'dist', 'index.html'))
+    win.loadFile(path.join(process.resourcesPath, 'app.asar', 'dist', 'index.html'))
   } else {
     // Load the Vite dev server (started separately via npm run dev)
     win.loadURL(DEV_URL)
