@@ -33,9 +33,7 @@ export default function Navbar() {
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 bg-indigo-600 rounded-lg flex items-center justify-center">
-            <span className="text-white text-xs font-bold">د</span>
-          </div>
+          <img src="/icons/logo-mark.png" alt="Dokanex" className="w-8 h-8 object-contain" />
           <span className="font-bold text-slate-800 text-lg">دكانيكس</span>
         </div>
       </div>
