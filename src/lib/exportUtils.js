@@ -43,7 +43,7 @@ export async function exportAsImage(products, fields, categoryMap) {
   const header = document.createElement('div')
   header.style.cssText = 'margin-bottom:16px; padding-bottom:12px; border-bottom:2px solid #e2e8f0;'
   header.innerHTML = `
-    <div style="font-size:18px;font-weight:700;color:#1e293b;">دكانكس</div>
+    <div style="font-size:18px;font-weight:700;color:#1e293b;">Dokkan<span style="color:#F59E0B">X</span></div>
     <div style="font-size:12px;color:#94a3b8;margin-top:2px;">قائمة المنتجات — ${products.length} منتج</div>
   `
   container.appendChild(header)
@@ -102,7 +102,7 @@ export async function exportAsImage(products, fields, categoryMap) {
   // Footer
   const footer = document.createElement('div')
   footer.style.cssText = 'margin-top:16px;font-size:10px;color:#cbd5e1;text-align:center;'
-  footer.textContent = `تصدير من دكانكس • ${new Date().toLocaleDateString('ar-EG')}`
+  footer.textContent = `تصدير من DokkanX • ${new Date().toLocaleDateString('ar-EG')}`
   container.appendChild(footer)
 
   document.body.appendChild(container)
@@ -118,7 +118,7 @@ export async function exportAsImage(products, fields, categoryMap) {
 export async function downloadImage(products, fields, categoryMap) {
   const canvas = await exportAsImage(products, fields, categoryMap)
   const link = document.createElement('a')
-  link.download = `دكانكس-منتجات-${Date.now()}.png`
+  link.download = `dokkanx-products-${Date.now()}.png`
   link.href = canvas.toDataURL('image/png')
   link.click()
 }
@@ -139,7 +139,7 @@ export async function shareAsImage(products, fields, categoryMap) {
       } else {
         // fallback: just download
         const link = document.createElement('a')
-        link.download = `دكانكس-منتجات-${Date.now()}.png`
+        link.download = `dokkanx-products-${Date.now()}.png`
         link.href = URL.createObjectURL(blob)
         link.click()
         resolve()
@@ -170,7 +170,7 @@ export async function exportAsPDF(products, fields, categoryMap) {
     if (remaining > 0) { doc.addPage(); y = 10 }
   }
 
-  doc.save(`دكانكس-منتجات-${Date.now()}.pdf`)
+  doc.save(`dokkanx-products-${Date.now()}.pdf`)
 }
 
 export async function shareAsText(products, fields, categoryMap) {

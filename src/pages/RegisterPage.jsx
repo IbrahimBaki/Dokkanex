@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import logoMark from '/icons/logo-mark.png'
+import logoMark from '/files/logo-mark.svg'
 
 function translateError(error) {
   if (!error) return ''
@@ -43,7 +43,7 @@ export default function RegisterPage() {
 
         <div className="text-center mb-8">
           <img src={logoMark} alt="Dokanex" className="w-16 h-16 mx-auto mb-3 object-contain" />
-          <h1 className="text-2xl font-bold text-slate-800">دكانيكس</h1>
+          <h1 className="text-2xl font-bold text-slate-800">دكان <span className="text-amber-500">إكس</span></h1>
           <p className="text-slate-500 text-sm mt-1">نظام إدارة المتجر والمنتجات</p>
         </div>
 

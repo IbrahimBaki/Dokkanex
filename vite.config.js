@@ -8,12 +8,12 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['icons/*.png', 'icons/*.svg'],
+      includeAssets: ['icons/*.png', 'icons/*.svg', 'files/*.svg'],
       manifest: {
-        name: 'دكانيكس - إدارة المنتجات',
-        short_name: 'دكانيكس',
+        name: 'DokkanX | دكان إكس',
+        short_name: 'DokkanX',
         description: 'تطبيق إدارة المنتجات والفئات',
-        theme_color: '#6366f1',
+        theme_color: '#1E3A5F',
         background_color: '#f8fafc',
         display: 'standalone',
         orientation: 'portrait',

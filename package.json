@@ -2,7 +2,7 @@
   "name": "dokanex",
   "private": true,
   "version": "1.0.0",
-  "description": "دكانكس — تطبيق إدارة المنتجات",
+  "description": "DokkanX — تطبيق إدارة المنتجات",
   "author": "Ibrahim Baki <ibbaqi@gmail.com>",
   "type": "module",
   "main": "electron/main.cjs",
@@ -39,7 +39,7 @@
   },
   "build": {
     "appId": "com.dokkanex.app",
-    "productName": "دكانكس",
+    "productName": "DokkanX",
     "files": [
       "dist/**/*",
       "electron/main.cjs",
@@ -73,7 +73,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "دكانكس"
+      "shortcutName": "DokkanX"
     }
   }
 }

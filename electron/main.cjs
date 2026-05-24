@@ -19,7 +19,7 @@ function createWindow() {
     height: 800,
     minWidth: 800,
     minHeight: 600,
-    title: 'دكانكس',
+    title: 'DokkanX',
     icon: ICON_PATH,
     show: false,
     webPreferences: {
@@ -50,7 +50,7 @@ function createWindow() {
 <html dir="rtl" lang="ar">
 <head>
   <meta charset="UTF-8"/>
-  <title>دكانكس</title>
+  <title>DokkanX</title>
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
     body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;background:#0f172a;color:#f8fafc;
@@ -71,7 +71,7 @@ function createWindow() {
   <div class="icon">📡</div>
   <h2>تحقق من اتصالك بالإنترنت</h2>
   <p>
-    دكانكس بيحتاج إنترنت عشان يشتغل.<br/>
+    DokkanX بيحتاج إنترنت عشان يشتغل.<br/>
     تأكد من الاتصال وحاول تاني.
     ${!IS_PACKAGED ? '<br/><br/>في وضع التطوير تأكد إن <code>npm run dev</code> شغّال.' : ''}
   </p>
@@ -113,7 +113,7 @@ function setupAutoUpdater(win) {
       dialog.showMessageBox(win, {
         type: 'info',
         title: 'تحديث جاهز',
-        message: 'تم تنزيل تحديث جديد لدكانكس.',
+        message: 'تم تنزيل تحديث جديد لـ DokkanX.',
         detail: 'سيتم تثبيته تلقائياً عند الإغلاق، أو اضغط "الآن" لإعادة التشغيل دلوقتي.',
         buttons: ['الآن', 'لاحقاً'],
         defaultId: 0,

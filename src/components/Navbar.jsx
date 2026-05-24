@@ -1,6 +1,6 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import logoMark from '/icons/logo-mark.png'
+import logoNavbar from '/files/logo-navbar.svg'
 
 export default function Navbar() {
   const { user, signOut } = useAuth()
@@ -43,8 +43,7 @@ export default function Navbar() {
         </div>
 
         <div className="flex items-center gap-2">
-          <img src={logoMark} alt="Dokanex" className="w-8 h-8 object-contain" />
-          <span className="font-bold text-slate-800 text-lg">دكانيكس</span>
+          <img src={logoNavbar} alt="DokkanX" className="h-8 w-auto" />
           <div className="w-px h-5 bg-slate-200" />
           <span
             className="text-xs text-slate-400 max-w-[90px] truncate hidden sm:block"

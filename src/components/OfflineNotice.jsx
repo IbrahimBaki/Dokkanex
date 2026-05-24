@@ -22,7 +22,7 @@ export default function OfflineNotice() {
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
           d="M18.364 5.636a9 9 0 010 12.728M15.536 8.464a5 5 0 010 7.072M12 12h.01M8.464 15.536a5 5 0 010-7.072M5.636 18.364a9 9 0 010-12.728" />
       </svg>
-      مفيش إنترنت — تأكد من الاتصال عشان دكانكس يشتغل
+      مفيش إنترنت — تأكد من الاتصال عشان DokkanX يشتغل
     </div>
   )
 }

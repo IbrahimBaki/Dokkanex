@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import logoMark from '/icons/logo-mark.png'
+import logoMark from '/files/logo-mark.svg'
 
 function useInView(threshold = 0.15) {
   const ref = useRef(null)
@@ -116,7 +116,7 @@ function HeroSection() {
         </h1>
 
         <p className="text-slate-300 text-lg sm:text-xl leading-relaxed mb-10">
-          دكانيكس تطبيق بسيط وسريع لإدارة منتجاتك وأسعارها وتصنيفاتها.
+          DokkanX تطبيق بسيط وسريع لإدارة منتجاتك وأسعارها وتصنيفاتها.
           <br className="hidden sm:block" />
           كل اللي محتاجه في مكان واحد، من أي جهاز.
         </p>
@@ -259,7 +259,7 @@ function Footer() {
           {/* Brand */}
           <div className="flex items-center gap-3">
             <img src={logoMark} alt="دكانيكس" className="w-8 h-8 object-contain" />
-            <span className="font-bold text-white text-lg">دكانيكس</span>
+            <span className="font-bold text-white text-lg">دكان <span className="text-amber-400">إكس</span></span>
           </div>
 
           {/* Links */}
@@ -272,7 +272,7 @@ function Footer() {
         </div>
 
         <div className="mt-8 pt-6 border-t border-slate-800 text-center text-xs text-slate-600">
-          © {new Date().getFullYear()} دكانيكس — كل الحقوق محفوظة
+          © {new Date().getFullYear()} DokkanX — كل الحقوق محفوظة
         </div>
       </div>
     </footer>
