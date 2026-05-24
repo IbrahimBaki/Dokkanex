@@ -1,9 +1,19 @@
-import { NavLink } from 'react-router-dom'
+import { NavLink, useNavigate } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
 
 export default function Navbar() {
+  const { user, signOut } = useAuth()
+  const navigate = useNavigate()
+
+  async function handleLogout() {
+    await signOut()
+    navigate('/login')
+  }
+
   return (
     <nav className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
       <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
+
         <div className="flex items-center gap-1">
           <NavLink
             to="/categories"
@@ -35,7 +45,25 @@ export default function Navbar() {
         <div className="flex items-center gap-2">
           <img src="/icons/logo-mark.png" alt="Dokanex" className="w-8 h-8 object-contain" />
           <span className="font-bold text-slate-800 text-lg">دكانيكس</span>
+          <div className="w-px h-5 bg-slate-200" />
+          <span
+            className="text-xs text-slate-400 max-w-[90px] truncate hidden sm:block"
+            title={user?.email}
+          >
+            {user?.email}
+          </span>
+          <button
+            onClick={handleLogout}
+            className="p-1.5 rounded-lg text-slate-500 hover:bg-red-50 hover:text-red-600 transition-colors"
+            title="تسجيل الخروج"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+          </button>
         </div>
+
       </div>
     </nav>
   )

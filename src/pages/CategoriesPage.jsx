@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import ConfirmDialog from '../components/ConfirmDialog'
+import { useAuth } from '../context/AuthContext'
 
 export default function CategoriesPage() {
+  const { user } = useAuth()
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -32,7 +34,7 @@ export default function CategoriesPage() {
     setAdding(true)
     setError('')
     try {
-      const { data, error } = await supabase.from('categories').insert({ name }).select().single()
+      const { data, error } = await supabase.from('categories').insert({ name, user_id: user.id }).select().single()
       if (error) throw error
       setCategories(prev => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)))
       setNewName('')

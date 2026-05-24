@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase, uploadImage, deleteImage } from '../lib/supabase'
+import { useAuth } from '../context/AuthContext'
 
 export default function ProductForm({ initialData, onSuccess, onCancel }) {
+  const { user } = useAuth()
   const [name, setName] = useState(initialData?.name || '')
   const [wholesalePrice, setWholesalePrice] = useState(initialData?.wholesale_price || '')
   const [sellingPrice, setSellingPrice] = useState(initialData?.selling_price || '')
@@ -54,7 +56,7 @@ export default function ProductForm({ initialData, onSuccess, onCancel }) {
     try {
       const { data, error } = await supabase
         .from('categories')
-        .insert({ name: trimmed })
+        .insert({ name: trimmed, user_id: user.id })
         .select()
         .single()
       if (error) throw error
@@ -105,7 +107,7 @@ export default function ProductForm({ initialData, onSuccess, onCancel }) {
       if (initialData?.id) {
         result = await supabase.from('products').update(payload).eq('id', initialData.id).select().single()
       } else {
-        result = await supabase.from('products').insert(payload).select().single()
+        result = await supabase.from('products').insert({ ...payload, user_id: user.id }).select().single()
       }
 
       if (result.error) throw result.error
