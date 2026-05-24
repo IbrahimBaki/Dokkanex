@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build output
+dist/
+dist-ssr/
+
+# Environment — NEVER commit real credentials
+.env
+.env.local
+.env.*.local
+
+# Vite cache
+.vite/
+
+# Editor directories
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# PWA generated files (built by vite-plugin-pwa)
+public/sw.js
+public/workbox-*.js
+public/sw.js.map
+public/workbox-*.js.map
