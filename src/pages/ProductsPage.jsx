@@ -34,6 +34,8 @@ export default function ProductsPage() {
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [showExport, setShowExport] = useState(false)
+  const [page, setPage] = useState(1)
+  const ITEMS_PER_PAGE = 100
 
   function setView(mode) {
     setViewMode(mode)
@@ -114,6 +116,13 @@ export default function ProductsPage() {
     return matchSearch && matchCat
   })
 
+  const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE))
+  const safePage = Math.min(page, totalPages)
+  const paginated = filtered.slice((safePage - 1) * ITEMS_PER_PAGE, safePage * ITEMS_PER_PAGE)
+
+  // Reset to page 1 whenever filters change
+  useEffect(() => { setPage(1) }, [search, selectedCategory])
+
   return (
     <div className="page-container">
       {/* Header */}
@@ -136,7 +145,11 @@ export default function ProductsPage() {
             </>
           ) : (
             <>
-              <span className="text-slate-500 text-sm">{products.length} منتج</span>
+              <span className="text-slate-500 text-sm">
+                {filtered.length !== products.length
+                  ? `${filtered.length} / ${products.length}`
+                  : products.length} منتج
+              </span>
               <div className="flex items-center gap-0.5 bg-slate-100 rounded-lg p-0.5">
                 <button
                   onClick={() => setView('grid')}
@@ -219,7 +232,7 @@ export default function ProductsPage() {
         </div>
       ) : viewMode === 'grid' ? (
         <div className="grid grid-cols-2 gap-3">
-          {filtered.map(product => (
+          {paginated.map(product => (
             <ProductCard
               key={product.id}
               product={product}
@@ -235,7 +248,7 @@ export default function ProductsPage() {
         </div>
       ) : (
         <div className="flex flex-col gap-2">
-          {filtered.map(product => (
+          {paginated.map(product => (
             <ProductCard
               key={product.id}
               product={product}
@@ -249,6 +262,58 @@ export default function ProductsPage() {
               onToggleSelect={toggleSelect}
             />
           ))}
+        </div>
+      )}
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-3 py-6 mt-2">
+          <button
+            onClick={() => setPage(p => Math.max(1, p - 1))}
+            disabled={safePage === 1}
+            className="w-9 h-9 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+
+          <div className="flex items-center gap-1">
+            {Array.from({ length: totalPages }, (_, i) => i + 1)
+              .filter(n => n === 1 || n === totalPages || Math.abs(n - safePage) <= 1)
+              .reduce((acc, n, idx, arr) => {
+                if (idx > 0 && n - arr[idx - 1] > 1) acc.push('…')
+                acc.push(n)
+                return acc
+              }, [])
+              .map((item, idx) =>
+                item === '…' ? (
+                  <span key={`ellipsis-${idx}`} className="px-1 text-slate-400 text-sm">…</span>
+                ) : (
+                  <button
+                    key={item}
+                    onClick={() => setPage(item)}
+                    className={`w-9 h-9 rounded-lg text-sm font-medium transition-colors ${
+                      item === safePage
+                        ? 'bg-indigo-600 text-white shadow-sm'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    {item}
+                  </button>
+                )
+              )}
+          </div>
+
+          <button
+            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+            disabled={safePage === totalPages}
+            className="w-9 h-9 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
         </div>
       )}
 
