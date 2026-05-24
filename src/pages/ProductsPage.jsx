@@ -27,6 +27,14 @@ export default function ProductsPage() {
   const [selectedCategory, setSelectedCategory] = useState(null)
   const [toDelete, setToDelete] = useState(null)
   const [deleting, setDeleting] = useState(false)
+  const [viewMode, setViewMode] = useState(
+    () => localStorage.getItem('products-view') || 'grid'
+  )
+
+  function setView(mode) {
+    setViewMode(mode)
+    localStorage.setItem('products-view', mode)
+  }
 
   useEffect(() => {
     fetchAll()
@@ -89,7 +97,31 @@ export default function ProductsPage() {
     <div className="page-container">
       {/* Header */}
       <div className="flex items-center justify-between mb-5">
-        <span className="text-slate-500 text-sm">{products.length} منتج</span>
+        <div className="flex items-center gap-2">
+          <span className="text-slate-500 text-sm">{products.length} منتج</span>
+          <div className="flex items-center gap-0.5 bg-slate-100 rounded-lg p-0.5">
+            <button
+              onClick={() => setView('grid')}
+              className={`p-1.5 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+              title="عرض شبكي"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+              </svg>
+            </button>
+            <button
+              onClick={() => setView('list')}
+              className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+              title="عرض قائمة"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+              </svg>
+            </button>
+          </div>
+        </div>
         <h1 className="text-xl font-bold text-slate-800">المنتجات</h1>
       </div>
 
@@ -133,7 +165,7 @@ export default function ProductsPage() {
             </>
           )}
         </div>
-      ) : (
+      ) : viewMode === 'grid' ? (
         <div className="grid grid-cols-2 gap-3">
           {filtered.map(product => (
             <ProductCard
@@ -143,6 +175,20 @@ export default function ProductsPage() {
               categoryId={product.category_id}
               onEdit={p => navigate(`/edit/${p.id}`)}
               onDelete={p => setToDelete(p)}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {filtered.map(product => (
+            <ProductCard
+              key={product.id}
+              product={product}
+              categoryName={categoryMap[product.category_id]?.name}
+              categoryId={product.category_id}
+              onEdit={p => navigate(`/edit/${p.id}`)}
+              onDelete={p => setToDelete(p)}
+              view="list"
             />
           ))}
         </div>
