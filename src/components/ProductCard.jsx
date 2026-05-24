@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { timeAgo } from '../lib/timeAgo'
 
 const PLACEHOLDER_BG = [
   'from-indigo-400 to-violet-500',
@@ -164,9 +165,12 @@ export default function ProductCard({ product, categoryName, categoryId, onEdit,
                     {categoryName}
                   </span>
                 )}
-                <h2 className="text-lg font-bold text-slate-800 leading-snug mb-4">
+                <h2 className="text-lg font-bold text-slate-800 leading-snug mb-1">
                   {product.name}
                 </h2>
+                <p className="text-xs text-slate-400 mb-4">
+                  آخر تعديل: {timeAgo(product.updated_at || product.created_at)}
+                </p>
 
                 <div className="grid grid-cols-2 gap-3 mb-4">
                   <div className="bg-slate-50 rounded-xl p-3 text-center">
@@ -243,6 +247,10 @@ export default function ProductCard({ product, categoryName, categoryId, onEdit,
             <div className="font-bold text-emerald-700 text-sm">{product.selling_price}</div>
           </div>
         </div>
+
+        <p className="text-[10px] text-slate-400 leading-none">
+          آخر تعديل: {timeAgo(product.updated_at || product.created_at)}
+        </p>
 
         <div className="flex gap-2 pt-1">
           <button

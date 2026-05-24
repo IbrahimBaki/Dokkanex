@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import ProductForm from '../components/ProductForm'
+import { timeAgo } from '../lib/timeAgo'
 
 export default function EditProductPage() {
   const { id } = useParams()
@@ -65,7 +66,14 @@ export default function EditProductPage() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
         </button>
-        <h1 className="text-xl font-bold text-slate-800">تعديل المنتج</h1>
+        <div>
+          <h1 className="text-xl font-bold text-slate-800">تعديل المنتج</h1>
+          {product.updated_at || product.created_at ? (
+            <p className="text-xs text-slate-400 mt-0.5">
+              آخر تعديل: {timeAgo(product.updated_at || product.created_at)}
+            </p>
+          ) : null}
+        </div>
       </div>
 
       <div className="card p-5">
