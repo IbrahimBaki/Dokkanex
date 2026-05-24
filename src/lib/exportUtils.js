@@ -102,7 +102,7 @@ export async function exportAsImage(products, fields, categoryMap) {
   // Footer
   const footer = document.createElement('div')
   footer.style.cssText = 'margin-top:16px;font-size:10px;color:#cbd5e1;text-align:center;'
-  footer.textContent = `تصدير من DokkanX • ${new Date().toLocaleDateString('ar-EG')}`
+  footer.textContent = `DokkanX by Baghdadi Tech • ${new Date().toLocaleDateString('ar-EG')}`
   container.appendChild(footer)
 
   document.body.appendChild(container)

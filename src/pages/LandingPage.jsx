@@ -272,7 +272,7 @@ function Footer() {
         </div>
 
         <div className="mt-8 pt-6 border-t border-slate-800 text-center text-xs text-slate-600">
-          © {new Date().getFullYear()} DokkanX — كل الحقوق محفوظة
+          © {new Date().getFullYear()} Baghdadi Tech — جميع الحقوق محفوظة
         </div>
       </div>
     </footer>
