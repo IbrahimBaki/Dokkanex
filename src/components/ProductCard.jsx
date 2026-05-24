@@ -237,14 +237,10 @@ export default function ProductCard({ product, categoryName, categoryId, onEdit,
           {product.name}
         </h3>
 
-        <div className="grid grid-cols-2 gap-1 text-xs mt-auto">
-          <div className="bg-slate-50 rounded-lg p-2">
-            <div className="text-slate-500 mb-0.5">الجملة</div>
-            <div className="font-bold text-slate-700">{product.wholesale_price}</div>
-          </div>
+        <div className="mt-auto text-xs">
           <div className="bg-emerald-50 rounded-lg p-2">
-            <div className="text-emerald-600 mb-0.5">البيع</div>
-            <div className="font-bold text-emerald-700">{product.selling_price}</div>
+            <div className="text-emerald-600 mb-0.5">سعر البيع</div>
+            <div className="font-bold text-emerald-700 text-sm">{product.selling_price}</div>
           </div>
         </div>
 
