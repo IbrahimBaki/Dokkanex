@@ -5,6 +5,7 @@ import ProductCard from '../components/ProductCard'
 import SearchBar from '../components/SearchBar'
 import CategoryFilter from '../components/CategoryFilter'
 import ConfirmDialog from '../components/ConfirmDialog'
+import ExportModal from '../components/ExportModal'
 
 function Spinner() {
   return (
@@ -30,10 +31,30 @@ export default function ProductsPage() {
   const [viewMode, setViewMode] = useState(
     () => localStorage.getItem('products-view') || 'grid'
   )
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState(new Set())
+  const [showExport, setShowExport] = useState(false)
 
   function setView(mode) {
     setViewMode(mode)
     localStorage.setItem('products-view', mode)
+  }
+
+  function toggleSelectionMode() {
+    setSelectionMode(v => !v)
+    setSelectedIds(new Set())
+  }
+
+  function toggleSelect(id) {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  function selectAll() {
+    setSelectedIds(new Set(filtered.map(p => p.id)))
   }
 
   useEffect(() => {
@@ -98,31 +119,62 @@ export default function ProductsPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-5">
         <div className="flex items-center gap-2">
-          <span className="text-slate-500 text-sm">{products.length} منتج</span>
-          <div className="flex items-center gap-0.5 bg-slate-100 rounded-lg p-0.5">
-            <button
-              onClick={() => setView('grid')}
-              className={`p-1.5 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-              title="عرض شبكي"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-              </svg>
-            </button>
-            <button
-              onClick={() => setView('list')}
-              className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-              title="عرض قائمة"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-              </svg>
-            </button>
-          </div>
+          {selectionMode ? (
+            <>
+              <button
+                onClick={toggleSelectionMode}
+                className="text-sm text-slate-500 hover:text-slate-700 transition-colors"
+              >
+                إلغاء
+              </button>
+              <button
+                onClick={selectAll}
+                className="text-sm text-indigo-600 font-medium hover:text-indigo-700 transition-colors"
+              >
+                تحديد الكل
+              </button>
+            </>
+          ) : (
+            <>
+              <span className="text-slate-500 text-sm">{products.length} منتج</span>
+              <div className="flex items-center gap-0.5 bg-slate-100 rounded-lg p-0.5">
+                <button
+                  onClick={() => setView('grid')}
+                  className={`p-1.5 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                  title="عرض شبكي"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => setView('list')}
+                  className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                  title="عرض قائمة"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                  </svg>
+                </button>
+              </div>
+              <button
+                onClick={toggleSelectionMode}
+                className="p-1.5 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+                title="تحديد للتصدير"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                </svg>
+              </button>
+            </>
+          )}
         </div>
-        <h1 className="text-xl font-bold text-slate-800">المنتجات</h1>
+        <h1 className="text-xl font-bold text-slate-800">
+          {selectionMode && selectedIds.size > 0 ? `${selectedIds.size} محدد` : 'المنتجات'}
+        </h1>
       </div>
 
       {/* Search */}
@@ -175,6 +227,9 @@ export default function ProductsPage() {
               categoryId={product.category_id}
               onEdit={p => navigate(`/edit/${p.id}`)}
               onDelete={p => setToDelete(p)}
+              selectionMode={selectionMode}
+              selected={selectedIds.has(product.id)}
+              onToggleSelect={toggleSelect}
             />
           ))}
         </div>
@@ -189,6 +244,9 @@ export default function ProductsPage() {
               onEdit={p => navigate(`/edit/${p.id}`)}
               onDelete={p => setToDelete(p)}
               view="list"
+              selectionMode={selectionMode}
+              selected={selectedIds.has(product.id)}
+              onToggleSelect={toggleSelect}
             />
           ))}
         </div>
@@ -214,6 +272,32 @@ export default function ProductsPage() {
         onCancel={() => setToDelete(null)}
         loading={deleting}
       />
+
+      {/* Export floating bar */}
+      {selectionMode && selectedIds.size > 0 && (
+        <div className="fixed bottom-6 inset-x-4 z-30 flex items-center justify-between gap-3 bg-indigo-600 text-white rounded-2xl px-4 py-3 shadow-xl shadow-indigo-300">
+          <span className="text-sm font-semibold">{selectedIds.size} منتج محدد</span>
+          <button
+            onClick={() => setShowExport(true)}
+            className="flex items-center gap-2 bg-white text-indigo-700 font-bold text-sm px-4 py-1.5 rounded-xl hover:bg-indigo-50 active:scale-95 transition-all"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+            تصدير ومشاركة
+          </button>
+        </div>
+      )}
+
+      {/* Export Modal */}
+      {showExport && (
+        <ExportModal
+          products={filtered.filter(p => selectedIds.has(p.id))}
+          categoryMap={categoryMap}
+          onClose={() => setShowExport(false)}
+        />
+      )}
     </div>
   )
 }

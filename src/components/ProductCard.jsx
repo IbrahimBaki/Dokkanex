@@ -46,7 +46,7 @@ function DeleteIcon() {
   )
 }
 
-export default function ProductCard({ product, categoryName, categoryId, onEdit, onDelete, view = 'grid' }) {
+export default function ProductCard({ product, categoryName, categoryId, onEdit, onDelete, view = 'grid', selectionMode = false, selected = false, onToggleSelect }) {
   const [imgError, setImgError] = useState(false)
   const [showDetail, setShowDetail] = useState(false)
   const gradient = PLACEHOLDER_BG[hashId(categoryId) % PLACEHOLDER_BG.length]
@@ -55,7 +55,21 @@ export default function ProductCard({ product, categoryName, categoryId, onEdit,
   if (view === 'list') {
     return (
       <>
-        <div className="card flex items-center gap-3 px-3 py-2.5 hover:shadow-md transition-shadow duration-200">
+        <div
+          className={`card flex items-center gap-3 px-3 py-2.5 hover:shadow-md transition-shadow duration-200 ${selectionMode ? 'cursor-pointer' : ''} ${selected ? 'ring-2 ring-indigo-500 bg-indigo-50/40' : ''}`}
+          onClick={selectionMode ? () => onToggleSelect(product.id) : undefined}
+        >
+          {/* Selection checkbox */}
+          {selectionMode && (
+            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${selected ? 'bg-indigo-600 border-indigo-600' : 'border-slate-300 bg-white'}`}>
+              {selected && (
+                <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                </svg>
+              )}
+            </div>
+          )}
+
           {/* Thumbnail */}
           <div className="w-14 h-14 rounded-lg overflow-hidden shrink-0 bg-slate-100">
             {product.image_url && !imgError ? (
@@ -95,7 +109,7 @@ export default function ProductCard({ product, categoryName, categoryId, onEdit,
           </div>
 
           {/* Actions */}
-          <div className="flex items-center gap-1 shrink-0">
+          {!selectionMode && <div className="flex items-center gap-1 shrink-0">
             <button
               onClick={() => setShowDetail(true)}
               className="w-8 h-8 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center hover:bg-slate-200 transition-colors"
@@ -122,7 +136,7 @@ export default function ProductCard({ product, categoryName, categoryId, onEdit,
             >
               <DeleteIcon />
             </button>
-          </div>
+          </div>}
         </div>
 
         {/* Detail sheet */}
@@ -212,7 +226,10 @@ export default function ProductCard({ product, categoryName, categoryId, onEdit,
 
   // ── Grid card (default) ─────────────────────────────────────────────────────
   return (
-    <div className="card overflow-hidden flex flex-col hover:shadow-md transition-shadow duration-200">
+    <div
+      className={`card overflow-hidden flex flex-col hover:shadow-md transition-shadow duration-200 ${selectionMode ? 'cursor-pointer' : ''} ${selected ? 'ring-2 ring-indigo-500' : ''}`}
+      onClick={selectionMode ? () => onToggleSelect(product.id) : undefined}
+    >
       {/* Image */}
       <div className="aspect-[4/3] bg-slate-100 overflow-hidden relative">
         {product.image_url && !imgError ? (
@@ -228,6 +245,15 @@ export default function ProductCard({ product, categoryName, categoryId, onEdit,
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
                 d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
+          </div>
+        )}
+        {selectionMode && (
+          <div className={`absolute top-2 right-2 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors shadow-sm ${selected ? 'bg-indigo-600 border-indigo-600' : 'bg-white/80 border-slate-300'}`}>
+            {selected && (
+              <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+              </svg>
+            )}
           </div>
         )}
       </div>
@@ -255,22 +281,24 @@ export default function ProductCard({ product, categoryName, categoryId, onEdit,
           آخر تعديل: {timeAgo(product.updated_at || product.created_at)}
         </p>
 
-        <div className="flex gap-2 pt-1">
-          <button
-            onClick={() => onEdit(product)}
-            className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors"
-          >
-            <EditIcon />
-            تعديل
-          </button>
-          <button
-            onClick={() => onDelete(product)}
-            className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium rounded-lg bg-red-50 text-red-700 hover:bg-red-100 transition-colors"
-          >
-            <DeleteIcon />
-            حذف
-          </button>
-        </div>
+        {!selectionMode && (
+          <div className="flex gap-2 pt-1">
+            <button
+              onClick={() => onEdit(product)}
+              className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors"
+            >
+              <EditIcon />
+              تعديل
+            </button>
+            <button
+              onClick={() => onDelete(product)}
+              className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium rounded-lg bg-red-50 text-red-700 hover:bg-red-100 transition-colors"
+            >
+              <DeleteIcon />
+              حذف
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )
