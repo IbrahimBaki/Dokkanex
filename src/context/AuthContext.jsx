@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { requestPersistentStorage } from '../lib/storageUtils'
 
 const AuthContext = createContext({})
 
@@ -16,6 +17,7 @@ export function AuthProvider({ children }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
       setLoading(false)
+      if (session?.user) requestPersistentStorage()
     })
 
     return () => subscription.unsubscribe()
