@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
-import { supabase, uploadImage, deleteImage } from '../lib/supabase'
-import { useAuth } from '../context/AuthContext'
+import { uploadImage, deleteImage, supabase } from '../lib/supabase'
+import { useSync } from '../context/SyncContext'
+import { getCategories, addCategory, addProduct, updateProduct } from '../lib/offlineOps'
 
 export default function ProductForm({ initialData, onSuccess, onCancel }) {
-  const { user } = useAuth()
+  const { isOnline, refreshMeta } = useSync()
   const [name, setName] = useState(initialData?.name || '')
   const [wholesalePrice, setWholesalePrice] = useState(initialData?.wholesale_price || '')
   const [sellingPrice, setSellingPrice] = useState(initialData?.selling_price || '')
@@ -27,8 +28,11 @@ export default function ProductForm({ initialData, onSuccess, onCancel }) {
   }, [])
 
   async function fetchCategories() {
-    const { data } = await supabase.from('categories').select('*').order('name')
-    if (data) setCategories(data)
+    const { data } = await supabase.auth.getSession()
+    const userId = data.session?.user?.id
+    if (!userId) return
+    const cats = await getCategories(userId)
+    setCategories(cats.sort((a, b) => a.name.localeCompare(b.name)))
   }
 
   function handleImageChange(e) {
@@ -54,16 +58,12 @@ export default function ProductForm({ initialData, onSuccess, onCancel }) {
     if (!trimmed) return
     setCatLoading(true)
     try {
-      const { data, error } = await supabase
-        .from('categories')
-        .insert({ name: trimmed, user_id: user.id })
-        .select()
-        .single()
-      if (error) throw error
-      setCategories(prev => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)))
-      setCategoryId(data.id)
+      const record = await addCategory({ name: trimmed })
+      setCategories(prev => [...prev, record].sort((a, b) => a.name.localeCompare(b.name)))
+      setCategoryId(record.id)
       setNewCategoryName('')
       setShowNewCategory(false)
+      refreshMeta()
     } catch (e) {
       setError('فشل إضافة الفئة: ' + e.message)
     } finally {
@@ -79,18 +79,20 @@ export default function ProductForm({ initialData, onSuccess, onCancel }) {
     if (!wholesalePrice || isNaN(wholesalePrice)) return setError('سعر الجملة غير صحيح')
     if (!sellingPrice || isNaN(sellingPrice)) return setError('سعر البيع غير صحيح')
 
+    if (imageFile && !isOnline) {
+      return setError('رفع الصور يتطلب اتصالاً بالإنترنت. احفظ المنتج بدون صورة الآن وأضف الصورة عند الاتصال.')
+    }
+
     setLoading(true)
     try {
       let imageUrl = initialData?.image_url || null
 
       if (imageFile) {
-        // If editing and had an old image, delete it first
         if (initialData?.image_url) {
           await deleteImage(initialData.image_url)
         }
         imageUrl = await uploadImage(imageFile)
       } else if (!imagePreview && initialData?.image_url) {
-        // Image was removed manually
         await deleteImage(initialData.image_url)
         imageUrl = null
       }
@@ -105,13 +107,13 @@ export default function ProductForm({ initialData, onSuccess, onCancel }) {
 
       let result
       if (initialData?.id) {
-        result = await supabase.from('products').update(payload).eq('id', initialData.id).select().single()
+        result = await updateProduct(initialData.id, payload)
       } else {
-        result = await supabase.from('products').insert({ ...payload, user_id: user.id }).select().single()
+        result = await addProduct(payload)
       }
 
-      if (result.error) throw result.error
-      onSuccess(result.data)
+      refreshMeta()
+      onSuccess(result)
     } catch (e) {
       setError('فشل حفظ المنتج: ' + e.message)
     } finally {
@@ -136,7 +138,12 @@ export default function ProductForm({ initialData, onSuccess, onCancel }) {
 
       {/* Image Upload */}
       <div>
-        <label className="form-label">صورة المنتج</label>
+        <label className="form-label">
+          صورة المنتج
+          {!isOnline && (
+            <span className="text-xs text-amber-500 font-normal mr-2">(يتطلب إنترنت)</span>
+          )}
+        </label>
         {imagePreview ? (
           <div className="relative w-full aspect-video rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
             <img src={imagePreview} alt="معاينة" className="w-full h-full object-cover" />
@@ -153,16 +160,23 @@ export default function ProductForm({ initialData, onSuccess, onCancel }) {
         ) : (
           <button
             type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="w-full border-2 border-dashed border-slate-300 rounded-xl py-8 flex flex-col items-center gap-2 hover:border-indigo-400 hover:bg-indigo-50 transition-colors text-slate-500"
-            disabled={loading}
+            onClick={() => isOnline && fileInputRef.current?.click()}
+            className={`w-full border-2 border-dashed rounded-xl py-8 flex flex-col items-center gap-2 transition-colors text-slate-500 ${
+              isOnline
+                ? 'border-slate-300 hover:border-indigo-400 hover:bg-indigo-50 cursor-pointer'
+                : 'border-slate-200 opacity-50 cursor-not-allowed'
+            }`}
+            disabled={loading || !isOnline}
+            title={!isOnline ? 'رفع الصور يتطلب اتصالاً بالإنترنت' : ''}
           >
             <svg className="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
                 d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
-            <span className="text-sm font-medium">اضغط لاختيار صورة</span>
-            <span className="text-xs text-slate-400">JPG, PNG, WEBP</span>
+            <span className="text-sm font-medium">
+              {isOnline ? 'اضغط لاختيار صورة' : 'رفع الصور يتطلب إنترنت'}
+            </span>
+            {isOnline && <span className="text-xs text-slate-400">JPG, PNG, WEBP</span>}
           </button>
         )}
         <input

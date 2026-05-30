@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase, deleteImage } from '../lib/supabase'
+import { useAuth } from '../context/AuthContext'
+import { useSync } from '../context/SyncContext'
+import { getProducts, getCategories, deleteProduct } from '../lib/offlineOps'
 import ProductCard from '../components/ProductCard'
 import SearchBar from '../components/SearchBar'
 import CategoryFilter from '../components/CategoryFilter'
@@ -20,6 +22,8 @@ function Spinner() {
 
 export default function ProductsPage() {
   const navigate = useNavigate()
+  const { user } = useAuth()
+  const { syncVersion, syncing } = useSync()
   const [products, setProducts] = useState([])
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
@@ -60,17 +64,9 @@ export default function ProductsPage() {
   }
 
   useEffect(() => {
+    if (!user) return
     fetchAll()
-
-    const channel = supabase
-      .channel('products-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, () => {
-        fetchProducts()
-      })
-      .subscribe()
-
-    return () => supabase.removeChannel(channel)
-  }, [])
+  }, [user, syncVersion])
 
   async function fetchAll() {
     setLoading(true)
@@ -79,35 +75,28 @@ export default function ProductsPage() {
   }
 
   async function fetchProducts() {
-    const PAGE = 1000
-    let all = []
-    let from = 0
-    while (true) {
-      const { data, error } = await supabase
-        .from('products')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .range(from, from + PAGE - 1)
-      if (error) { setError('فشل تحميل المنتجات'); return }
-      if (data) all = all.concat(data)
-      if (!data || data.length < PAGE) break
-      from += PAGE
+    try {
+      const data = await getProducts(user.id)
+      setProducts(data.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)))
+    } catch (e) {
+      setError('فشل تحميل المنتجات: ' + e.message)
     }
-    setProducts(all)
   }
 
   async function fetchCategories() {
-    const { data } = await supabase.from('categories').select('*').order('name')
-    if (data) setCategories(data)
+    try {
+      const data = await getCategories(user.id)
+      setCategories(data.sort((a, b) => a.name.localeCompare(b.name)))
+    } catch (e) {
+      console.error('fetchCategories error', e)
+    }
   }
 
   async function handleDelete() {
     if (!toDelete) return
     setDeleting(true)
     try {
-      await deleteImage(toDelete.image_url)
-      const { error } = await supabase.from('products').delete().eq('id', toDelete.id)
-      if (error) throw error
+      await deleteProduct(toDelete.id)
       setProducts(prev => prev.filter(p => p.id !== toDelete.id))
       setToDelete(null)
     } catch (e) {
@@ -129,7 +118,6 @@ export default function ProductsPage() {
   const safePage = Math.min(page, totalPages)
   const paginated = filtered.slice((safePage - 1) * ITEMS_PER_PAGE, safePage * ITEMS_PER_PAGE)
 
-  // Reset to page 1 whenever filters change
   useEffect(() => { setPage(1) }, [search, selectedCategory])
 
   return (
@@ -221,6 +209,14 @@ export default function ProductsPage() {
       {/* Content */}
       {loading ? (
         <Spinner />
+      ) : products.length === 0 && syncing ? (
+        <div className="flex flex-col items-center justify-center py-16 text-slate-400 gap-3">
+          <svg className="w-8 h-8 animate-spin text-indigo-400" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+          </svg>
+          <p className="text-sm">جاري تحميل البيانات من السيرفر...</p>
+        </div>
       ) : filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-slate-400">
           <svg className="w-16 h-16 mb-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -1,6 +1,7 @@
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import { useAuth } from './context/AuthContext'
+import { SyncProvider } from './context/SyncContext'
 import PrivateLayout from './components/PrivateLayout'
 import PublicRoute from './components/PublicRoute'
 import OfflineNotice from './components/OfflineNotice'
@@ -25,19 +26,21 @@ export default function App() {
     <HashRouter>
       <OfflineNotice />
       <AuthProvider>
-        <Routes>
-          <Route path="/" element={<RootRoute />} />
-          <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
-          <Route path="/register" element={<PublicRoute><RegisterPage /></PublicRoute>} />
-          <Route element={<PrivateLayout />}>
-            <Route path="/products" element={<ProductsPage />} />
-            <Route path="/add" element={<AddProductPage />} />
-            <Route path="/edit/:id" element={<EditProductPage />} />
-            <Route path="/categories" element={<CategoriesPage />} />
-            <Route path="/dashboard" element={<DashboardPage />} />
-            <Route path="*" element={<Navigate to="/products" replace />} />
-          </Route>
-        </Routes>
+        <SyncProvider>
+          <Routes>
+            <Route path="/" element={<RootRoute />} />
+            <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
+            <Route path="/register" element={<PublicRoute><RegisterPage /></PublicRoute>} />
+            <Route element={<PrivateLayout />}>
+              <Route path="/products" element={<ProductsPage />} />
+              <Route path="/add" element={<AddProductPage />} />
+              <Route path="/edit/:id" element={<EditProductPage />} />
+              <Route path="/categories" element={<CategoriesPage />} />
+              <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="*" element={<Navigate to="/products" replace />} />
+            </Route>
+          </Routes>
+        </SyncProvider>
       </AuthProvider>
     </HashRouter>
   )

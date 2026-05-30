@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react'
-import { supabase } from '../lib/supabase'
-import ConfirmDialog from '../components/ConfirmDialog'
 import { useAuth } from '../context/AuthContext'
+import { useSync } from '../context/SyncContext'
+import { getCategories, addCategory, updateCategory, deleteCategory } from '../lib/offlineOps'
+import ConfirmDialog from '../components/ConfirmDialog'
 
 export default function CategoriesPage() {
   const { user } = useAuth()
+  const { syncVersion, refreshMeta } = useSync()
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -17,15 +19,20 @@ export default function CategoriesPage() {
   const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
+    if (!user) return
     fetchCategories()
-  }, [])
+  }, [user, syncVersion])
 
   async function fetchCategories() {
     setLoading(true)
-    const { data, error } = await supabase.from('categories').select('*').order('name')
-    if (error) setError('فشل تحميل الفئات')
-    else setCategories(data || [])
-    setLoading(false)
+    try {
+      const data = await getCategories(user.id)
+      setCategories(data.sort((a, b) => a.name.localeCompare(b.name)))
+    } catch (e) {
+      setError('فشل تحميل الفئات: ' + e.message)
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function handleAdd() {
@@ -34,10 +41,10 @@ export default function CategoriesPage() {
     setAdding(true)
     setError('')
     try {
-      const { data, error } = await supabase.from('categories').insert({ name, user_id: user.id }).select().single()
-      if (error) throw error
-      setCategories(prev => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)))
+      const record = await addCategory({ name })
+      setCategories(prev => [...prev, record].sort((a, b) => a.name.localeCompare(b.name)))
       setNewName('')
+      refreshMeta()
     } catch (e) {
       setError('فشل إضافة الفئة: ' + e.message)
     } finally {
@@ -50,15 +57,10 @@ export default function CategoriesPage() {
     if (!name || name === cat.name) return cancelEdit()
     setSaving(true)
     try {
-      const { data, error } = await supabase
-        .from('categories')
-        .update({ name })
-        .eq('id', cat.id)
-        .select()
-        .single()
-      if (error) throw error
-      setCategories(prev => prev.map(c => c.id === cat.id ? data : c).sort((a, b) => a.name.localeCompare(b.name)))
+      const record = await updateCategory(cat.id, { name })
+      setCategories(prev => prev.map(c => c.id === cat.id ? record : c).sort((a, b) => a.name.localeCompare(b.name)))
       cancelEdit()
+      refreshMeta()
     } catch (e) {
       setError('فشل تعديل الفئة: ' + e.message)
     } finally {
@@ -80,10 +82,10 @@ export default function CategoriesPage() {
     if (!toDelete) return
     setDeleting(true)
     try {
-      const { error } = await supabase.from('categories').delete().eq('id', toDelete.id)
-      if (error) throw error
+      await deleteCategory(toDelete.id)
       setCategories(prev => prev.filter(c => c.id !== toDelete.id))
       setToDelete(null)
+      refreshMeta()
     } catch (e) {
       setError('فشل حذف الفئة: ' + e.message)
     } finally {

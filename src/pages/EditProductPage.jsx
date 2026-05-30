@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
 import ProductForm from '../components/ProductForm'
+import { getProductById } from '../lib/offlineOps'
 import { timeAgo } from '../lib/timeAgo'
 
 export default function EditProductPage() {
@@ -17,18 +17,18 @@ export default function EditProductPage() {
 
   async function fetchProduct() {
     setLoading(true)
-    const { data, error } = await supabase
-      .from('products')
-      .select('*')
-      .eq('id', id)
-      .single()
-
-    if (error || !data) {
-      setError('لم يتم العثور على المنتج')
-    } else {
-      setProduct(data)
+    try {
+      const data = await getProductById(id)
+      if (!data) {
+        setError('لم يتم العثور على المنتج')
+      } else {
+        setProduct(data)
+      }
+    } catch (e) {
+      setError('فشل تحميل المنتج: ' + e.message)
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   if (loading) {

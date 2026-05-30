@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
-import { supabase } from '../lib/supabase'
+import { useAuth } from '../context/AuthContext'
+import { useSync } from '../context/SyncContext'
+import { getProducts, getCategories } from '../lib/offlineOps'
 
 function Spinner() {
   return (
@@ -38,23 +40,26 @@ function BucketRow({ emoji, label, count, total, colorClass }) {
 }
 
 export default function DashboardPage() {
+  const { user } = useAuth()
+  const { syncVersion } = useSync()
   const [products, setProducts] = useState([])
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    if (!user) return
     async function fetchData() {
       setLoading(true)
-      const [{ data: prods }, { data: cats }] = await Promise.all([
-        supabase.from('products').select('*'),
-        supabase.from('categories').select('*'),
+      const [prods, cats] = await Promise.all([
+        getProducts(user.id),
+        getCategories(user.id)
       ])
       setProducts(prods || [])
       setCategories(cats || [])
       setLoading(false)
     }
     fetchData()
-  }, [])
+  }, [user, syncVersion])
 
   if (loading) return <Spinner />
 
@@ -80,7 +85,6 @@ export default function DashboardPage() {
     ? margins.reduce((a, b) => a + b, 0) / margins.length
     : null
 
-  // Category breakdown — top 8 non-empty, plus uncategorized if any
   const byCategory = categories
     .map(c => ({ name: c.name, count: products.filter(p => p.category_id === c.id).length }))
     .filter(c => c.count > 0)
@@ -93,7 +97,6 @@ export default function DashboardPage() {
   }
   const maxCount = Math.max(...byCategory.map(c => c.count), 1)
 
-  // Margin buckets
   const buckets = { high: 0, mid: 0, low: 0 }
   margins.forEach(m => {
     if (m >= 30) buckets.high++
@@ -101,7 +104,6 @@ export default function DashboardPage() {
     else buckets.low++
   })
 
-  // Top 10 by margin
   const topProducts = pricedProducts
     .map(p => ({ ...p, margin: ((p.selling_price - p.wholesale_price) / p.selling_price) * 100 }))
     .sort((a, b) => b.margin - a.margin)
