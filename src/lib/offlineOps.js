@@ -15,12 +15,14 @@ export const getProducts = (userId) =>
 export const getProductById = (id) =>
   db.products.get(id);
 
-export async function addProduct(data) {
+export async function addProduct(data, imageBase64 = null) {
   const userId = await getUserId();
   const record = {
     ...data,
     id: uuidv4(),
     user_id: userId,
+    image_base64: imageBase64 || null,
+    image_url: imageBase64 ? null : (data.image_url || null),
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   };
@@ -29,11 +31,22 @@ export async function addProduct(data) {
   return record;
 }
 
-export async function updateProduct(id, data) {
-  const updated = { ...data, updated_at: new Date().toISOString() };
+export async function updateProduct(id, data, imageBase64 = null) {
+  const existing = await db.products.get(id);
+
+  // Track old URL so sync can delete it from Supabase Storage
+  const oldImageUrl = imageBase64 ? (existing?.image_url || null) : null;
+
+  const imageFields = imageBase64
+    ? { image_base64: imageBase64, image_url: null }
+    : {};
+
+  const updated = { ...data, ...imageFields, updated_at: new Date().toISOString() };
   await db.products.update(id, updated);
   const full = await db.products.get(id);
-  await addToQueue('products', 'UPDATE', id, full);
+
+  const queueData = oldImageUrl ? { ...full, _old_image_url: oldImageUrl } : full;
+  await addToQueue('products', 'UPDATE', id, queueData);
   return full;
 }
 

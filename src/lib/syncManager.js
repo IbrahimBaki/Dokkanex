@@ -1,18 +1,43 @@
 import { db } from './db';
 import { supabase, deleteImage } from './supabase';
+import { uploadBase64ToSupabase } from './imageUtils';
 
 export async function pullFromSupabase(userId) {
-  const tables = ['categories', 'products'];
+  // Categories: full replace (no local-only fields)
+  const { data: catData, error: catError } = await supabase
+    .from('categories')
+    .select('*')
+    .eq('user_id', userId);
 
-  for (const table of tables) {
-    const { data, error } = await supabase
-      .from(table)
-      .select('*')
-      .eq('user_id', userId);
+  if (!catError && catData) {
+    await db.categories.clear();
+    if (catData.length > 0) await db.categories.bulkPut(catData);
+  }
 
-    if (!error && data) {
-      await db[table].clear();
-      if (data.length > 0) await db[table].bulkPut(data);
+  // Products: merge carefully — preserve pending local records (e.g. image_base64 not yet uploaded)
+  const { data: prodData, error: prodError } = await supabase
+    .from('products')
+    .select('*')
+    .eq('user_id', userId);
+
+  if (!prodError && prodData) {
+    // IDs that still have pending sync operations
+    const pendingIds = new Set(
+      (await db.sync_queue.where('table_name').equals('products').toArray())
+        .map(q => q.record_id)
+    );
+
+    // Update/insert products from Supabase that are not pending
+    const toUpdate = prodData.filter(p => !pendingIds.has(p.id));
+    if (toUpdate.length > 0) await db.products.bulkPut(toUpdate);
+
+    // Remove products deleted remotely (not pending locally)
+    const remoteIds = new Set(prodData.map(p => p.id));
+    const localAll = await db.products.toArray();
+    for (const local of localAll) {
+      if (!remoteIds.has(local.id) && !pendingIds.has(local.id)) {
+        await db.products.delete(local.id);
+      }
     }
   }
 
@@ -28,18 +53,42 @@ export async function pushToSupabase() {
 
   for (const item of queue) {
     try {
+      const rawData = item.data ? { ...item.data } : {};
+
+      // Upload pending Base64 image before INSERT or UPDATE
+      if (item.table_name === 'products' && rawData.image_base64 && item.operation !== 'DELETE') {
+        try {
+          const publicUrl = await uploadBase64ToSupabase(rawData.image_base64, supabase);
+          rawData.image_url = publicUrl;
+          // Update Dexie so the card shows the real URL immediately
+          await db.products.update(item.record_id, { image_url: publicUrl, image_base64: null });
+        } catch {
+          // Image upload failed — leave queue item, retry on next sync
+          failed++;
+          continue;
+        }
+      }
+
+      // Strip Dexie-only fields before sending to Supabase
+      delete rawData.image_base64;
+      delete rawData._old_image_url;
+
       if (item.operation === 'INSERT') {
-        const { error } = await supabase.from(item.table_name).insert(item.data);
+        const { error } = await supabase.from(item.table_name).insert(rawData);
         if (error) throw error;
       } else if (item.operation === 'UPDATE') {
+        // Delete old image from Storage if it was replaced
+        if (item.table_name === 'products' && item.data?._old_image_url) {
+          await deleteImage(item.data._old_image_url).catch(() => {});
+        }
         const { error } = await supabase
           .from(item.table_name)
-          .update(item.data)
+          .update(rawData)
           .eq('id', item.record_id);
         if (error) throw error;
       } else if (item.operation === 'DELETE') {
         if (item.table_name === 'products' && item.data?.image_url) {
-          await deleteImage(item.data.image_url);
+          await deleteImage(item.data.image_url).catch(() => {});
         }
         const { error } = await supabase
           .from(item.table_name)
@@ -47,6 +96,7 @@ export async function pushToSupabase() {
           .eq('id', item.record_id);
         if (error) throw error;
       }
+
       await db.sync_queue.delete(item.id);
       pushed++;
     } catch {

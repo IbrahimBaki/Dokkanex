@@ -48,6 +48,7 @@ function DeleteIcon() {
 
 export default function ProductCard({ product, categoryName, categoryId, onEdit, onDelete, view = 'grid', selectionMode = false, selected = false, onToggleSelect }) {
   const [imgError, setImgError] = useState(false)
+  const imageSrc = product.image_base64 || product.image_url || null
   const [showDetail, setShowDetail] = useState(false)
   const gradient = PLACEHOLDER_BG[hashId(categoryId) % PLACEHOLDER_BG.length]
 
@@ -72,9 +73,9 @@ export default function ProductCard({ product, categoryName, categoryId, onEdit,
 
           {/* Thumbnail */}
           <div className="w-14 h-14 rounded-lg overflow-hidden shrink-0 bg-slate-100">
-            {product.image_url && !imgError ? (
+            {imageSrc && !imgError ? (
               <img
-                src={product.image_url}
+                src={imageSrc}
                 alt={product.name}
                 className="w-full h-full object-cover"
                 onError={() => setImgError(true)}
@@ -151,9 +152,9 @@ export default function ProductCard({ product, categoryName, categoryId, onEdit,
             >
               {/* Image */}
               <div className="aspect-video bg-slate-100 relative">
-                {product.image_url && !imgError ? (
+                {imageSrc && !imgError ? (
                   <img
-                    src={product.image_url}
+                    src={imageSrc}
                     alt={product.name}
                     className="w-full h-full object-cover"
                   />
@@ -232,9 +233,9 @@ export default function ProductCard({ product, categoryName, categoryId, onEdit,
     >
       {/* Image */}
       <div className="aspect-[4/3] bg-slate-100 overflow-hidden relative">
-        {product.image_url && !imgError ? (
+        {imageSrc && !imgError ? (
           <img
-            src={product.image_url}
+            src={imageSrc}
             alt={product.name}
             className="w-full h-full object-cover"
             onError={() => setImgError(true)}
