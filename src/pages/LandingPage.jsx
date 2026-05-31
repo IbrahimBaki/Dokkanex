@@ -363,7 +363,7 @@ function CTASection() {
         className={`max-w-xl mx-auto text-center transition-all duration-700 ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}
       >
         <h2 className="text-3xl font-bold text-white mb-4">عايز تبدأ؟</h2>
-        <p className="text-indigo-100 text-lg mb-8">انضم وابدأ تأدّر منتجاتك دلوقتي. مجاناً 100%.</p>
+        <p className="text-indigo-100 text-lg mb-8">انضم وابدأ إدارة منتجاتك دلوقتي. مجاناً 100%.</p>
         <Link
           to="/register"
           className="inline-flex items-center gap-2 bg-white text-indigo-700 font-bold px-10 py-4 rounded-xl hover:bg-indigo-50 transition-all active:scale-95 shadow-lg text-lg"
