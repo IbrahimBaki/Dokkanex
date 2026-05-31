@@ -139,15 +139,15 @@ function HeroSection() {
           >
             سجّل دخولك
           </Link>
-          <a
-            href="#download"
+          <button
+            onClick={() => document.getElementById('download')?.scrollIntoView({ behavior: 'smooth' })}
             className="inline-flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white font-medium px-8 py-3.5 rounded-xl border border-white/10 transition-all active:scale-95 backdrop-blur-sm text-sm"
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
               <path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.9-1.801" />
             </svg>
             نزّل للويندوز
-          </a>
+          </button>
         </div>
 
         {/* Scroll hint */}
@@ -392,9 +392,9 @@ function Footer() {
 
           {/* Links */}
           <div className="flex items-center gap-6 text-sm text-slate-400">
-            <a href="#features" className="hover:text-white transition-colors">المميزات</a>
-            <a href="#how" className="hover:text-white transition-colors">بيشتغل إزاي</a>
-            <a href="#download" className="hover:text-indigo-400 transition-colors font-medium">تحميل الويندوز</a>
+            <button onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })} className="hover:text-white transition-colors">المميزات</button>
+            <button onClick={() => document.getElementById('how')?.scrollIntoView({ behavior: 'smooth' })} className="hover:text-white transition-colors">بيشتغل إزاي</button>
+            <button onClick={() => document.getElementById('download')?.scrollIntoView({ behavior: 'smooth' })} className="hover:text-indigo-400 transition-colors font-medium">تحميل الويندوز</button>
             <Link to="/login" className="hover:text-white transition-colors">سجّل دخولك</Link>
             <Link to="/register" className="hover:text-white transition-colors">افتح حساب</Link>
           </div>
