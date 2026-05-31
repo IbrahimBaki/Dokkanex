@@ -139,6 +139,15 @@ function HeroSection() {
           >
             سجّل دخولك
           </Link>
+          <a
+            href="#download"
+            className="inline-flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white font-medium px-8 py-3.5 rounded-xl border border-white/10 transition-all active:scale-95 backdrop-blur-sm text-sm"
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.9-1.801" />
+            </svg>
+            نزّل للويندوز
+          </a>
         </div>
 
         {/* Scroll hint */}
@@ -226,6 +235,125 @@ function HowItWorksSection() {
   )
 }
 
+// ── Download Section ─────────────────────────────────────────────────────────
+// Update GITHUB_RELEASE_URL after uploading the .exe to GitHub Releases
+const GITHUB_RELEASE_URL =
+  'https://github.com/IbrahimBaki/Dokkanex/releases/download/v1.0.0/DokkanX-Setup-1.0.0.exe'
+
+const installSteps = [
+  {
+    n: '١',
+    title: 'حمّل ملف الإعداد',
+    desc: 'اضغط زر التحميل وحمّل ملف "DokkanX-Setup.exe" (حوالي 80 ميجا).',
+  },
+  {
+    n: '٢',
+    title: 'شغّل الإعداد',
+    desc: 'افتح الملف اللي حمّلته واضغط "Install". مش محتاج صلاحيات مدير.',
+  },
+  {
+    n: '٣',
+    title: 'سجّل دخولك',
+    desc: 'افتح التطبيق وسجّل بنفس حسابك الموجود على الويب — بياناتك هتتزامن تلقائياً.',
+  },
+  {
+    n: '٤',
+    title: 'اشتغل Offline',
+    desc: 'دلوقتي تقدر تضيف وتعدّل المنتجات من غير نت. أوّل ما الإنترنت يرجع هتتزامن تلقائياً.',
+  },
+]
+
+function DownloadSection() {
+  const [ref, visible] = useInView()
+  return (
+    <section id="download" className="py-20 bg-white px-6">
+      <div
+        ref={ref}
+        className={`max-w-2xl mx-auto transition-all duration-700 ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}
+      >
+        {/* Header */}
+        <div className="text-center mb-14">
+          <span className="inline-block text-xs font-semibold tracking-widest text-indigo-500 uppercase mb-3">
+            تطبيق الويندوز
+          </span>
+          <h2 className="text-3xl font-bold text-slate-900">اشتغل بدون إنترنت</h2>
+          <p className="text-slate-500 mt-3 text-base leading-relaxed">
+            حمّل نسخة الويندوز وأدّر منتجاتك حتى لو الشبكة وقفت.
+            <br className="hidden sm:block" />
+            البيانات بتتزامن تلقائياً لمّا الإنترنت يرجع.
+          </p>
+        </div>
+
+        {/* Download card */}
+        <div className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-slate-50 p-8 mb-14 flex flex-col sm:flex-row items-center gap-6 shadow-sm">
+          {/* Windows icon */}
+          <div className="shrink-0 w-20 h-20 rounded-2xl bg-[#0078D4] flex items-center justify-center shadow-lg shadow-blue-200">
+            <svg className="w-11 h-11 text-white" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.9-1.801" />
+            </svg>
+          </div>
+
+          <div className="flex-1 text-center sm:text-right">
+            <p className="font-bold text-slate-900 text-lg">DokkanX for Windows</p>
+            <p className="text-slate-500 text-sm mt-1">
+              الإصدار 1.0.0 &nbsp;·&nbsp; يدعم Windows 10 / 11 &nbsp;·&nbsp; 64-bit
+            </p>
+          </div>
+
+          <a
+            href={GITHUB_RELEASE_URL}
+            className="shrink-0 inline-flex items-center gap-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-7 py-3.5 rounded-xl transition-all active:scale-95 shadow-md shadow-indigo-200"
+            download
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            تحميل مجاني
+          </a>
+        </div>
+
+        {/* Install steps */}
+        <div className="text-center mb-10">
+          <h3 className="text-xl font-bold text-slate-800">خطوات التثبيت</h3>
+          <p className="text-slate-500 text-sm mt-1">أربع خطوات وتبقى جاهز</p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+          {installSteps.map((s, i) => (
+            <div
+              key={i}
+              className="flex gap-4 rounded-2xl border border-slate-100 bg-slate-50 p-5 hover:shadow-md hover:border-indigo-100 transition-all duration-300"
+              style={{ transitionDelay: `${i * 80}ms` }}
+            >
+              <div className="shrink-0 w-10 h-10 rounded-full bg-indigo-100 text-indigo-600 font-bold text-base flex items-center justify-center">
+                {s.n}
+              </div>
+              <div>
+                <p className="font-bold text-slate-800 text-sm mb-1">{s.title}</p>
+                <p className="text-slate-500 text-sm leading-relaxed">{s.desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Note */}
+        <div className="mt-8 rounded-xl bg-amber-50 border border-amber-100 px-5 py-4 flex items-start gap-3">
+          <svg className="w-5 h-5 text-amber-500 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+              d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <p className="text-amber-800 text-sm leading-relaxed">
+            لو ظهرت رسالة "Windows protected your PC" — اضغط <strong>More info</strong> ثم <strong>Run anyway</strong>.
+            هذا تحذير عادي لأي تطبيق جديد مش مسجّل في Microsoft.
+          </p>
+        </div>
+      </div>
+    </section>
+  )
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 function CTASection() {
   const [ref, visible] = useInView()
   return (
@@ -266,6 +394,7 @@ function Footer() {
           <div className="flex items-center gap-6 text-sm text-slate-400">
             <a href="#features" className="hover:text-white transition-colors">المميزات</a>
             <a href="#how" className="hover:text-white transition-colors">بيشتغل إزاي</a>
+            <a href="#download" className="hover:text-indigo-400 transition-colors font-medium">تحميل الويندوز</a>
             <Link to="/login" className="hover:text-white transition-colors">سجّل دخولك</Link>
             <Link to="/register" className="hover:text-white transition-colors">افتح حساب</Link>
           </div>
@@ -285,6 +414,7 @@ export default function LandingPage() {
       <HeroSection />
       <FeaturesSection />
       <HowItWorksSection />
+      <DownloadSection />
       <CTASection />
       <Footer />
     </div>
