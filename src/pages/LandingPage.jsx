@@ -236,9 +236,8 @@ function HowItWorksSection() {
 }
 
 // ── Download Section ─────────────────────────────────────────────────────────
-// Update GITHUB_RELEASE_URL after uploading the .exe to GitHub Releases
 const GITHUB_RELEASE_URL =
-  'https://github.com/IbrahimBaki/Dokkanex/releases/download/v1.0.0/DokkanX-Setup-1.0.0.exe'
+  'https://github.com/IbrahimBaki/Dokkanex/releases/latest/download/DokkanX-Setup.exe'
 
 const installSteps = [
   {
