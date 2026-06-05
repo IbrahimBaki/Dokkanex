@@ -237,7 +237,7 @@ function HowItWorksSection() {
 
 // ── Download Section ─────────────────────────────────────────────────────────
 const GITHUB_RELEASE_URL =
-  'https://github.com/IbrahimBaki/Dokkanex/releases/latest/download/DokkanX-Setup.exe'
+  'https://github.com/IbrahimBaki/Dokkanex/releases/latest/download/DokkanX-Setup-1.1.0.exe'
 
 const installSteps = [
   {
@@ -295,7 +295,7 @@ function DownloadSection() {
           <div className="flex-1 text-center sm:text-right">
             <p className="font-bold text-slate-900 text-lg">DokkanX for Windows</p>
             <p className="text-slate-500 text-sm mt-1">
-              الإصدار 1.0.0 &nbsp;·&nbsp; يدعم Windows 10 / 11 &nbsp;·&nbsp; 64-bit
+              الإصدار 1.1.0 &nbsp;·&nbsp; يدعم Windows 10 / 11 &nbsp;·&nbsp; 64-bit
             </p>
           </div>
 
