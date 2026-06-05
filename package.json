@@ -14,7 +14,8 @@
     "electron:dev": "concurrently -n VITE,ELECTRON -c cyan,green \"npm run dev\" \"npm run electron:start\"",
     "electron:build:linux": "npm run build && electron-builder --linux",
     "electron:build:win": "npm run build && electron-builder --win",
-    "electron:build": "npm run build && electron-builder"
+    "electron:build": "npm run build && electron-builder",
+    "release": "npm run build && electron-builder --publish always"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
@@ -69,6 +70,10 @@
       "target": "AppImage",
       "icon": "public/icons/icon-512.png",
       "category": "Office"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "public/icons/icon-512.png"
     },
     "nsis": {
       "oneClick": false,
