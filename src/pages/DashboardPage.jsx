@@ -67,7 +67,7 @@ export default function DashboardPage() {
 
   if (totalProducts === 0) {
     return (
-      <div className="max-w-2xl mx-auto px-4 py-20 text-center text-slate-400">
+      <div className="max-w-7xl mx-auto px-4 py-20 text-center text-slate-400">
         <p className="text-lg font-medium">لا توجد بيانات لعرضها</p>
         <p className="text-sm mt-1">أضف منتجات أولاً لرؤية التحليلات</p>
       </div>
@@ -124,7 +124,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-6 space-y-5" dir="rtl">
+    <div className="max-w-7xl mx-auto px-4 py-6 space-y-5" dir="rtl">
       <h1 className="text-xl font-bold text-slate-800">لوحة التحليلات</h1>
 
       {/* Summary cards */}
@@ -141,7 +141,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Category chart + Margin buckets */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <div className="bg-white rounded-xl border border-slate-200 p-4">
           <h2 className="text-sm font-semibold text-slate-700 mb-4">أعلى التصنيفات</h2>
           {byCategory.length === 0 ? (

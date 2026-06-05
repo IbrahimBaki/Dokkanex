@@ -168,7 +168,7 @@ function FeaturesSection() {
     <section id="features" className="py-20 bg-white px-6">
       <div
         ref={ref}
-        className={`max-w-2xl mx-auto transition-all duration-700 ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}
+        className={`max-w-4xl mx-auto transition-all duration-700 ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}
       >
         <div className="text-center mb-12">
           <span className="inline-block text-xs font-semibold tracking-widest text-indigo-500 uppercase mb-3">المميزات</span>
@@ -176,7 +176,7 @@ function FeaturesSection() {
           <p className="text-slate-500 mt-3 text-base">أدوات بسيطة وشغّالة بتوفّر عليك وقت وجهد</p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
           {features.map((f, i) => (
             <div
               key={i}
@@ -202,7 +202,7 @@ function HowItWorksSection() {
     <section id="how" className="py-20 bg-slate-50 px-6">
       <div
         ref={ref}
-        className={`max-w-2xl mx-auto transition-all duration-700 ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}
+        className={`max-w-4xl mx-auto transition-all duration-700 ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}
       >
         <div className="text-center mb-12">
           <span className="inline-block text-xs font-semibold tracking-widest text-indigo-500 uppercase mb-3">بيشتغل إزاي</span>
@@ -269,7 +269,7 @@ function DownloadSection() {
     <section id="download" className="py-20 bg-white px-6">
       <div
         ref={ref}
-        className={`max-w-2xl mx-auto transition-all duration-700 ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}
+        className={`max-w-4xl mx-auto transition-all duration-700 ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}
       >
         {/* Header */}
         <div className="text-center mb-14">
@@ -319,7 +319,7 @@ function DownloadSection() {
           <p className="text-slate-500 text-sm mt-1">أربع خطوات وتبقى جاهز</p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
           {installSteps.map((s, i) => (
             <div
               key={i}
@@ -382,7 +382,7 @@ function CTASection() {
 function Footer() {
   return (
     <footer className="bg-slate-900 py-10 px-6">
-      <div className="max-w-2xl mx-auto">
+      <div className="max-w-7xl mx-auto">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
           {/* Brand */}
           <div className="flex items-center gap-3">
