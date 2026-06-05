@@ -3,24 +3,42 @@ import { supabase, deleteImage } from './supabase';
 import { uploadBase64ToSupabase } from './imageUtils';
 
 export async function pullFromSupabase(userId) {
-  // Categories: full replace (no local-only fields)
-  const { data: catData, error: catError } = await supabase
-    .from('categories')
-    .select('*')
-    .eq('user_id', userId);
+  const PAGE_SIZE = 1000;
 
-  if (!catError && catData) {
-    await db.categories.clear();
-    if (catData.length > 0) await db.categories.bulkPut(catData);
+  // Categories: full replace (no local-only fields)
+  let allCatData = [];
+  let catFrom = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from('categories')
+      .select('*')
+      .eq('user_id', userId)
+      .range(catFrom, catFrom + PAGE_SIZE - 1);
+    if (error || !data || data.length === 0) break;
+    allCatData = allCatData.concat(data);
+    if (data.length < PAGE_SIZE) break;
+    catFrom += PAGE_SIZE;
   }
 
-  // Products: merge carefully — preserve pending local records (e.g. image_base64 not yet uploaded)
-  const { data: prodData, error: prodError } = await supabase
-    .from('products')
-    .select('*')
-    .eq('user_id', userId);
+  await db.categories.clear();
+  if (allCatData.length > 0) await db.categories.bulkPut(allCatData);
 
-  if (!prodError && prodData) {
+  // Products: merge carefully — preserve pending local records (e.g. image_base64 not yet uploaded)
+  let allProdData = [];
+  let prodFrom = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from('products')
+      .select('*')
+      .eq('user_id', userId)
+      .range(prodFrom, prodFrom + PAGE_SIZE - 1);
+    if (error || !data || data.length === 0) break;
+    allProdData = allProdData.concat(data);
+    if (data.length < PAGE_SIZE) break;
+    prodFrom += PAGE_SIZE;
+  }
+
+  if (allProdData.length >= 0) {
     // IDs that still have pending sync operations
     const pendingIds = new Set(
       (await db.sync_queue.where('table_name').equals('products').toArray())
@@ -28,11 +46,11 @@ export async function pullFromSupabase(userId) {
     );
 
     // Update/insert products from Supabase that are not pending
-    const toUpdate = prodData.filter(p => !pendingIds.has(p.id));
+    const toUpdate = allProdData.filter(p => !pendingIds.has(p.id));
     if (toUpdate.length > 0) await db.products.bulkPut(toUpdate);
 
     // Remove products deleted remotely (not pending locally)
-    const remoteIds = new Set(prodData.map(p => p.id));
+    const remoteIds = new Set(allProdData.map(p => p.id));
     const localAll = await db.products.toArray();
     for (const local of localAll) {
       if (!remoteIds.has(local.id) && !pendingIds.has(local.id)) {

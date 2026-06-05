@@ -35,9 +35,7 @@ export function SyncProvider({ children }) {
   useEffect(() => {
     if (!user) return;
     refreshMeta();
-    getLastSync().then(last => {
-      if (!last && navigator.onLine) handleSync();
-    });
+    if (navigator.onLine) handleSync();
   }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
