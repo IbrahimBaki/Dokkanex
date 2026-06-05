@@ -109,6 +109,14 @@ function setupAutoUpdater(win) {
       // No release configured or no internet — fail silently
     })
 
+    autoUpdater.on('error', (err) => {
+      console.error('Auto-updater error:', err)
+    })
+
+    autoUpdater.on('update-available', (info) => {
+      if (win && !win.isDestroyed()) win.webContents.send('update-available', info)
+    })
+
     autoUpdater.on('update-downloaded', () => {
       dialog.showMessageBox(win, {
         type: 'info',
