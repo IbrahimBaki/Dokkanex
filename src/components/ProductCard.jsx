@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { timeAgo } from '../lib/timeAgo'
 
 const PLACEHOLDER_BG = [
@@ -46,11 +46,32 @@ function DeleteIcon() {
   )
 }
 
+function DotsMenuIcon() {
+  return (
+    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+      <circle cx="12" cy="5" r="1.5" />
+      <circle cx="12" cy="12" r="1.5" />
+      <circle cx="12" cy="19" r="1.5" />
+    </svg>
+  )
+}
+
 export default function ProductCard({ product, categoryName, categoryId, onEdit, onDelete, view = 'grid', selectionMode = false, selected = false, onToggleSelect }) {
   const [imgError, setImgError] = useState(false)
   const imageSrc = product.image_base64 || product.image_url || null
   const [showDetail, setShowDetail] = useState(false)
+  const [showMenu, setShowMenu] = useState(false)
+  const menuRef = useRef(null)
   const gradient = PLACEHOLDER_BG[hashId(categoryId) % PLACEHOLDER_BG.length]
+
+  useEffect(() => {
+    if (!showMenu) return
+    function handleOutside(e) {
+      if (menuRef.current && !menuRef.current.contains(e.target)) setShowMenu(false)
+    }
+    document.addEventListener('mousedown', handleOutside)
+    return () => document.removeEventListener('mousedown', handleOutside)
+  }, [showMenu])
 
   // ── List row ────────────────────────────────────────────────────────────────
   if (view === 'list') {
@@ -90,7 +111,7 @@ export default function ProductCard({ product, categoryName, categoryId, onEdit,
             )}
           </div>
 
-          {/* Info — selling price only, prominent */}
+          {/* Info */}
           <div className="flex-1 min-w-0">
             {categoryName && (
               <span className={`text-xs font-semibold px-1.5 py-0.5 rounded-full inline-block mb-0.5 ${getCategoryColor(categoryId)}`}>
@@ -109,35 +130,50 @@ export default function ProductCard({ product, categoryName, categoryId, onEdit,
             </p>
           </div>
 
-          {/* Actions */}
-          {!selectionMode && <div className="flex items-center gap-1 shrink-0">
-            <button
-              onClick={() => setShowDetail(true)}
-              className="w-8 h-8 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center hover:bg-slate-200 transition-colors"
-              title="تفاصيل"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-              </svg>
-            </button>
-            <button
-              onClick={() => onEdit(product)}
-              className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-700 flex items-center justify-center hover:bg-indigo-100 transition-colors"
-              title="تعديل"
-            >
-              <EditIcon />
-            </button>
-            <button
-              onClick={() => onDelete(product)}
-              className="w-8 h-8 rounded-lg bg-red-50 text-red-700 flex items-center justify-center hover:bg-red-100 transition-colors"
-              title="حذف"
-            >
-              <DeleteIcon />
-            </button>
-          </div>}
+          {/* 3-dots menu */}
+          {!selectionMode && (
+            <div className="relative shrink-0" ref={menuRef}>
+              <button
+                onClick={e => { e.stopPropagation(); setShowMenu(v => !v) }}
+                className="w-8 h-8 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center hover:bg-slate-200 transition-colors"
+                title="خيارات"
+              >
+                <DotsMenuIcon />
+              </button>
+
+              {showMenu && (
+                <div className="absolute left-0 top-10 z-50 w-40 bg-white rounded-xl shadow-lg border border-slate-100 py-1 overflow-hidden">
+                  <button
+                    onClick={e => { e.stopPropagation(); setShowMenu(false); setShowDetail(true) }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                  >
+                    <svg className="w-4 h-4 text-slate-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                        d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                    تفاصيل
+                  </button>
+                  <button
+                    onClick={e => { e.stopPropagation(); setShowMenu(false); onEdit(product) }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-indigo-700 hover:bg-indigo-50 transition-colors"
+                  >
+                    <EditIcon />
+                    تعديل
+                  </button>
+                  <div className="h-px bg-slate-100 mx-2" />
+                  <button
+                    onClick={e => { e.stopPropagation(); setShowMenu(false); onDelete(product) }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                  >
+                    <DeleteIcon />
+                    حذف
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Detail sheet */}
@@ -150,14 +186,9 @@ export default function ProductCard({ product, categoryName, categoryId, onEdit,
               className="bg-white w-full sm:max-w-sm sm:rounded-2xl rounded-t-2xl overflow-hidden shadow-2xl"
               onClick={e => e.stopPropagation()}
             >
-              {/* Image */}
               <div className="aspect-video bg-slate-100 relative">
                 {imageSrc && !imgError ? (
-                  <img
-                    src={imageSrc}
-                    alt={product.name}
-                    className="w-full h-full object-cover"
-                  />
+                  <img src={imageSrc} alt={product.name} className="w-full h-full object-cover" />
                 ) : (
                   <div className={`w-full h-full bg-gradient-to-br ${gradient} flex items-center justify-center`}>
                     <svg className="w-16 h-16 text-white/70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -176,16 +207,13 @@ export default function ProductCard({ product, categoryName, categoryId, onEdit,
                 </button>
               </div>
 
-              {/* Content */}
               <div className="p-4 pb-safe" dir="rtl">
                 {categoryName && (
                   <span className={`text-xs font-semibold px-2 py-0.5 rounded-full inline-block mb-2 ${getCategoryColor(categoryId)}`}>
                     {categoryName}
                   </span>
                 )}
-                <h2 className="text-lg font-bold text-slate-800 leading-snug mb-1">
-                  {product.name}
-                </h2>
+                <h2 className="text-lg font-bold text-slate-800 leading-snug mb-1">{product.name}</h2>
                 <p className="text-xs text-slate-400 mb-4">
                   آخر تعديل: {timeAgo(product.updated_at || product.created_at)}
                 </p>
@@ -231,7 +259,6 @@ export default function ProductCard({ product, categoryName, categoryId, onEdit,
       className={`card overflow-hidden flex flex-col hover:shadow-md transition-shadow duration-200 ${selectionMode ? 'cursor-pointer' : ''} ${selected ? 'ring-2 ring-indigo-500' : ''}`}
       onClick={selectionMode ? () => onToggleSelect(product.id) : undefined}
     >
-      {/* Image */}
       <div className="aspect-[4/3] bg-slate-100 overflow-hidden relative">
         {imageSrc && !imgError ? (
           <img
@@ -259,7 +286,6 @@ export default function ProductCard({ product, categoryName, categoryId, onEdit,
         )}
       </div>
 
-      {/* Info */}
       <div className="p-3 flex flex-col gap-2 flex-1">
         {categoryName && (
           <span className={`text-xs font-semibold px-2 py-0.5 rounded-full w-fit ${getCategoryColor(categoryId)}`}>
