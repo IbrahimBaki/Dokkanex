@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { fullSync, getPendingCount, getLastSync } from '../lib/syncManager';
+import { dbReady } from '../lib/db';
 import { useAuth } from './AuthContext';
 
 const SyncContext = createContext({});
@@ -34,8 +35,12 @@ export function SyncProvider({ children }) {
 
   useEffect(() => {
     if (!user) return;
-    refreshMeta();
-    if (navigator.onLine) handleSync();
+    dbReady
+      .then(() => {
+        refreshMeta();
+        if (navigator.onLine) handleSync();
+      })
+      .catch(e => console.error('IndexedDB unavailable:', e));
   }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {

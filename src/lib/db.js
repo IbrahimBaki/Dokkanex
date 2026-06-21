@@ -15,3 +15,10 @@ db.version(2).stores({
   sync_queue: '++id, table_name, operation, record_id, created_at',
   app_meta: 'key'
 });
+
+// Close this tab's handle when another tab triggers a DB version upgrade.
+db.on('versionchange', () => db.close());
+
+// Open the DB eagerly at module load so the first real operation never races
+// against Chrome's IndexedDB initialisation (which can throw UnknownError).
+export const dbReady = db.open();
