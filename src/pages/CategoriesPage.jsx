@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useAuth } from '../context/AuthContext'
 import { useSync } from '../context/SyncContext'
 import { getCategories, addCategory, updateCategory, deleteCategory } from '../lib/offlineOps'
 import ConfirmDialog from '../components/ConfirmDialog'
 
 export default function CategoriesPage() {
+  const { t } = useTranslation()
   const { user } = useAuth()
   const { syncVersion, refreshMeta } = useSync()
   const [categories, setCategories] = useState([])
@@ -29,7 +31,7 @@ export default function CategoriesPage() {
       const data = await getCategories(user.id)
       setCategories(data.sort((a, b) => a.name.localeCompare(b.name)))
     } catch (e) {
-      setError('فشل تحميل الفئات: ' + e.message)
+      setError(t('categories.errors.failedToLoad', { error: e.message }))
     } finally {
       setLoading(false)
     }
@@ -37,7 +39,7 @@ export default function CategoriesPage() {
 
   async function handleAdd() {
     const name = newName.trim()
-    if (!name) return setError('اسم الفئة مطلوب')
+    if (!name) return setError(t('categories.errors.nameRequired'))
     setAdding(true)
     setError('')
     try {
@@ -46,7 +48,7 @@ export default function CategoriesPage() {
       setNewName('')
       refreshMeta()
     } catch (e) {
-      setError('فشل إضافة الفئة: ' + e.message)
+      setError(t('categories.errors.failedToAdd', { error: e.message }))
     } finally {
       setAdding(false)
     }
@@ -62,7 +64,7 @@ export default function CategoriesPage() {
       cancelEdit()
       refreshMeta()
     } catch (e) {
-      setError('فشل تعديل الفئة: ' + e.message)
+      setError(t('categories.errors.failedToEdit', { error: e.message }))
     } finally {
       setSaving(false)
     }
@@ -87,7 +89,7 @@ export default function CategoriesPage() {
       setToDelete(null)
       refreshMeta()
     } catch (e) {
-      setError('فشل حذف الفئة: ' + e.message)
+      setError(t('categories.errors.failedToDelete', { error: e.message }))
     } finally {
       setDeleting(false)
     }
@@ -96,19 +98,19 @@ export default function CategoriesPage() {
   return (
     <div className="page-container">
       <div className="flex items-center justify-between mb-6">
-        <span className="text-slate-500 text-sm">{categories.length} فئة</span>
-        <h1 className="text-xl font-bold text-slate-800">الفئات</h1>
+        <span className="text-slate-500 text-sm">{t('categories.count', { count: categories.length })}</span>
+        <h1 className="text-xl font-bold text-slate-800">{t('categories.title')}</h1>
       </div>
 
       {/* Add Form */}
       <div className="card p-4 mb-5">
-        <p className="text-sm font-semibold text-slate-700 mb-3">إضافة فئة جديدة</p>
+        <p className="text-sm font-semibold text-slate-700 mb-3">{t('categories.addNew')}</p>
         <div className="flex gap-2">
           <input
             type="text"
             value={newName}
             onChange={e => { setNewName(e.target.value); setError('') }}
-            placeholder="اسم الفئة"
+            placeholder={t('categories.namePlaceholder')}
             className="input-field"
             disabled={adding}
             onKeyDown={e => e.key === 'Enter' && handleAdd()}
@@ -130,7 +132,7 @@ export default function CategoriesPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
             )}
-            إضافة
+            {t('categories.add')}
           </button>
         </div>
       </div>
@@ -156,8 +158,8 @@ export default function CategoriesPage() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1}
               d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
           </svg>
-          <p className="font-semibold text-slate-500">لا توجد فئات بعد</p>
-          <p className="text-sm mt-1">أضف فئة لتنظيم منتجاتك</p>
+          <p className="font-semibold text-slate-500">{t('categories.noCategories')}</p>
+          <p className="text-sm mt-1">{t('categories.addToOrganize')}</p>
         </div>
       ) : (
         <div className="card divide-y divide-slate-100 overflow-hidden">
@@ -245,8 +247,8 @@ export default function CategoriesPage() {
 
       <ConfirmDialog
         open={!!toDelete}
-        title="حذف الفئة"
-        message={`هل أنت متأكد من حذف فئة "${toDelete?.name}"؟ لن تُحذف المنتجات المرتبطة بها.`}
+        title={t('categories.deleteTitle')}
+        message={t('categories.deleteConfirm', { name: toDelete?.name })}
         onConfirm={handleDelete}
         onCancel={() => setToDelete(null)}
         loading={deleting}

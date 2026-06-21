@@ -1,19 +1,19 @@
 import { useState, useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { deleteImage, supabase } from '../lib/supabase'
 import { useSync } from '../context/SyncContext'
 import { getCategories, addCategory, addProduct, updateProduct } from '../lib/offlineOps'
 import { compressAndConvertToBase64 } from '../lib/imageUtils'
 
 export default function ProductForm({ initialData, onSuccess, onCancel }) {
+  const { t } = useTranslation()
   const { refreshMeta } = useSync()
   const [name, setName] = useState(initialData?.name || '')
   const [wholesalePrice, setWholesalePrice] = useState(initialData?.wholesale_price || '')
   const [sellingPrice, setSellingPrice] = useState(initialData?.selling_price || '')
   const [categoryId, setCategoryId] = useState(initialData?.category_id || '')
   const [categories, setCategories] = useState([])
-  // imageBase64: the NEW compressed image the user just picked (null = no new image)
   const [imageBase64, setImageBase64] = useState(null)
-  // imagePreview: what to show — new base64, existing base64, or existing remote URL
   const [imagePreview, setImagePreview] = useState(
     initialData?.image_base64 || initialData?.image_url || null
   )
@@ -47,7 +47,7 @@ export default function ProductForm({ initialData, onSuccess, onCancel }) {
       setImageBase64(base64)
       setImagePreview(base64)
     } catch {
-      setError('فشل معالجة الصورة، جرّب صورة أخرى')
+      setError(t('productForm.errors.imageError'))
     } finally {
       setImageLoading(false)
       if (fileInputRef.current) fileInputRef.current.value = ''
@@ -72,7 +72,7 @@ export default function ProductForm({ initialData, onSuccess, onCancel }) {
       setShowNewCategory(false)
       refreshMeta()
     } catch (e) {
-      setError('فشل إضافة الفئة: ' + e.message)
+      setError(t('productForm.errors.categoryAdd', { error: e.message }))
     } finally {
       setCatLoading(false)
     }
@@ -82,9 +82,9 @@ export default function ProductForm({ initialData, onSuccess, onCancel }) {
     e.preventDefault()
     setError('')
 
-    if (!name.trim()) return setError('اسم المنتج مطلوب')
-    if (!wholesalePrice || isNaN(wholesalePrice)) return setError('سعر الجملة غير صحيح')
-    if (!sellingPrice || isNaN(sellingPrice)) return setError('سعر البيع غير صحيح')
+    if (!name.trim()) return setError(t('productForm.errors.nameRequired'))
+    if (!wholesalePrice || isNaN(wholesalePrice)) return setError(t('productForm.errors.invalidWholesale'))
+    if (!sellingPrice || isNaN(sellingPrice)) return setError(t('productForm.errors.invalidSelling'))
 
     setLoading(true)
     try {
@@ -98,34 +98,28 @@ export default function ProductForm({ initialData, onSuccess, onCancel }) {
       let result
 
       if (initialData?.id) {
-        // Edit mode
         const hadImage = !!(initialData.image_url || initialData.image_base64)
         const imageRemoved = imagePreview === null && hadImage
 
         if (imageRemoved) {
-          // User explicitly removed the image
           payload.image_url = null
           payload.image_base64 = null
-          // Best-effort delete from Storage (silent fail if offline)
           if (initialData.image_url) await deleteImage(initialData.image_url).catch(() => {})
           result = await updateProduct(initialData.id, payload, null)
         } else if (imageBase64) {
-          // User picked a new image
           result = await updateProduct(initialData.id, payload, imageBase64)
         } else {
-          // No change to image — preserve existing URL/base64
           if (initialData.image_url) payload.image_url = initialData.image_url
           result = await updateProduct(initialData.id, payload, null)
         }
       } else {
-        // Add mode
         result = await addProduct(payload, imageBase64)
       }
 
       refreshMeta()
       onSuccess(result)
     } catch (e) {
-      setError('فشل حفظ المنتج: ' + e.message)
+      setError(t('productForm.errors.saveFailed', { error: e.message }))
     } finally {
       setLoading(false)
     }
@@ -135,12 +129,12 @@ export default function ProductForm({ initialData, onSuccess, onCancel }) {
     <form onSubmit={handleSubmit} className="space-y-5">
       {/* Product Name */}
       <div>
-        <label className="form-label">اسم المنتج <span className="text-red-500">*</span></label>
+        <label className="form-label">{t('productForm.name')} <span className="text-red-500">*</span></label>
         <input
           type="text"
           value={name}
           onChange={e => setName(e.target.value)}
-          placeholder="أدخل اسم المنتج"
+          placeholder={t('productForm.namePlaceholder')}
           className="input-field"
           disabled={loading}
         />
@@ -148,10 +142,10 @@ export default function ProductForm({ initialData, onSuccess, onCancel }) {
 
       {/* Image Upload */}
       <div>
-        <label className="form-label">صورة المنتج</label>
+        <label className="form-label">{t('productForm.image')}</label>
         {imagePreview ? (
           <div className="relative w-full aspect-video rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
-            <img src={imagePreview} alt="معاينة" className="w-full h-full object-cover" />
+            <img src={imagePreview} alt={t('productForm.imagePreviewAlt')} className="w-full h-full object-cover" />
             <button
               type="button"
               onClick={removeImage}
@@ -176,7 +170,7 @@ export default function ProductForm({ initialData, onSuccess, onCancel }) {
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
                 </svg>
-                <span className="text-sm font-medium text-indigo-500">جاري ضغط الصورة...</span>
+                <span className="text-sm font-medium text-indigo-500">{t('productForm.compressingImage')}</span>
               </>
             ) : (
               <>
@@ -184,8 +178,8 @@ export default function ProductForm({ initialData, onSuccess, onCancel }) {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
                     d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
-                <span className="text-sm font-medium">اضغط لاختيار صورة</span>
-                <span className="text-xs text-slate-400">يعمل بدون إنترنت • JPG, PNG, WEBP</span>
+                <span className="text-sm font-medium">{t('productForm.clickToSelectImage')}</span>
+                <span className="text-xs text-slate-400">{t('productForm.worksOffline')}</span>
               </>
             )}
           </button>
@@ -202,7 +196,7 @@ export default function ProductForm({ initialData, onSuccess, onCancel }) {
       {/* Prices */}
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="form-label">سعر الجملة <span className="text-red-500">*</span></label>
+          <label className="form-label">{t('productForm.wholesalePrice')} <span className="text-red-500">*</span></label>
           <input
             type="number"
             value={wholesalePrice}
@@ -215,7 +209,7 @@ export default function ProductForm({ initialData, onSuccess, onCancel }) {
           />
         </div>
         <div>
-          <label className="form-label">سعر البيع <span className="text-red-500">*</span></label>
+          <label className="form-label">{t('productForm.sellingPrice')} <span className="text-red-500">*</span></label>
           <input
             type="number"
             value={sellingPrice}
@@ -231,7 +225,7 @@ export default function ProductForm({ initialData, onSuccess, onCancel }) {
 
       {/* Category */}
       <div>
-        <label className="form-label">الفئة</label>
+        <label className="form-label">{t('productForm.category')}</label>
         <select
           value={categoryId}
           onChange={e => {
@@ -246,11 +240,11 @@ export default function ProductForm({ initialData, onSuccess, onCancel }) {
           className="input-field"
           disabled={loading}
         >
-          <option value="">— اختر فئة —</option>
+          <option value="">{t('productForm.selectCategory')}</option>
           {categories.map(cat => (
             <option key={cat.id} value={cat.id}>{cat.name}</option>
           ))}
-          <option value="__new__">+ إضافة فئة جديدة</option>
+          <option value="__new__">{t('productForm.addNewCategory')}</option>
         </select>
 
         {showNewCategory && (
@@ -259,7 +253,7 @@ export default function ProductForm({ initialData, onSuccess, onCancel }) {
               type="text"
               value={newCategoryName}
               onChange={e => setNewCategoryName(e.target.value)}
-              placeholder="اسم الفئة الجديدة"
+              placeholder={t('productForm.newCategoryName')}
               className="input-field"
               disabled={catLoading}
               onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleAddCategory())}
@@ -275,7 +269,7 @@ export default function ProductForm({ initialData, onSuccess, onCancel }) {
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
                 </svg>
-              ) : 'إضافة'}
+              ) : t('productForm.add')}
             </button>
           </div>
         )}
@@ -301,10 +295,10 @@ export default function ProductForm({ initialData, onSuccess, onCancel }) {
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
             </svg>
           )}
-          {loading ? 'جاري الحفظ...' : (initialData ? 'حفظ التعديلات' : 'إضافة المنتج')}
+          {loading ? t('productForm.saving') : (initialData ? t('productForm.saveChanges') : t('productForm.addProduct'))}
         </button>
         <button type="button" onClick={onCancel} disabled={loading} className="btn-ghost px-6">
-          إلغاء
+          {t('productForm.cancel')}
         </button>
       </div>
     </form>

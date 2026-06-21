@@ -1,4 +1,7 @@
+import { useTranslation } from 'react-i18next'
+
 export default function ConfirmDialog({ open, title, message, onConfirm, onCancel, loading }) {
+  const { t } = useTranslation()
   if (!open) return null
 
   return (
@@ -21,7 +24,7 @@ export default function ConfirmDialog({ open, title, message, onConfirm, onCance
             disabled={loading}
             className="btn-ghost text-sm px-5"
           >
-            إلغاء
+            {t('confirmDialog.cancel')}
           </button>
           <button
             onClick={onConfirm}
@@ -34,7 +37,7 @@ export default function ConfirmDialog({ open, title, message, onConfirm, onCance
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
               </svg>
             )}
-            نعم، احذف
+            {t('confirmDialog.confirm')}
           </button>
         </div>
       </div>

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useAuth } from '../context/AuthContext'
 import { useSync } from '../context/SyncContext'
 import { getProducts, getCategories } from '../lib/offlineOps'
@@ -25,12 +26,13 @@ function StatCard({ icon, label, value, valueClass = 'text-slate-800' }) {
 }
 
 function BucketRow({ emoji, label, count, total, colorClass }) {
+  const { t } = useTranslation()
   const pct = total > 0 ? (count / total) * 100 : 0
   return (
     <div>
       <div className="flex justify-between text-xs text-slate-600 mb-1">
         <span>{emoji} {label}</span>
-        <span className="text-slate-400 shrink-0 mr-2">{count} من {total}</span>
+        <span className="text-slate-400 shrink-0 mx-2">{count} {t('dashboard.of')} {total}</span>
       </div>
       <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
         <div className={`h-full rounded-full transition-all ${colorClass}`} style={{ width: `${pct}%` }} />
@@ -40,6 +42,7 @@ function BucketRow({ emoji, label, count, total, colorClass }) {
 }
 
 export default function DashboardPage() {
+  const { t, i18n } = useTranslation()
   const { user } = useAuth()
   const { syncVersion } = useSync()
   const [products, setProducts] = useState([])
@@ -68,12 +71,13 @@ export default function DashboardPage() {
   if (totalProducts === 0) {
     return (
       <div className="max-w-7xl mx-auto px-4 py-20 text-center text-slate-400">
-        <p className="text-lg font-medium">لا توجد بيانات لعرضها</p>
-        <p className="text-sm mt-1">أضف منتجات أولاً لرؤية التحليلات</p>
+        <p className="text-lg font-medium">{t('dashboard.noData')}</p>
+        <p className="text-sm mt-1">{t('dashboard.addProductsFirst')}</p>
       </div>
     )
   }
 
+  const locale = i18n.language === 'ar' ? 'ar-EG' : 'en-US'
   const totalCategories = categories.length
   const totalValue = products.reduce((s, p) => s + (p.selling_price || 0), 0)
 
@@ -93,7 +97,7 @@ export default function DashboardPage() {
 
   const uncatCount = products.filter(p => !p.category_id).length
   if (uncatCount > 0 && byCategory.length < 8) {
-    byCategory.push({ name: 'بدون فئة', count: uncatCount })
+    byCategory.push({ name: t('dashboard.uncategorized'), count: uncatCount })
   }
   const maxCount = Math.max(...byCategory.map(c => c.count), 1)
 
@@ -109,7 +113,7 @@ export default function DashboardPage() {
     .sort((a, b) => b.margin - a.margin)
     .slice(0, 10)
 
-  const fmt = n => n.toLocaleString('ar-EG', { maximumFractionDigits: 0 })
+  const fmt = n => n.toLocaleString(locale, { maximumFractionDigits: 0 })
 
   function marginBarColor(m) {
     if (m >= 30) return 'bg-emerald-500'
@@ -124,28 +128,28 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-6 space-y-5" dir="rtl">
-      <h1 className="text-xl font-bold text-slate-800">لوحة التحليلات</h1>
+    <div className="max-w-7xl mx-auto px-4 py-6 space-y-5">
+      <h1 className="text-xl font-bold text-slate-800">{t('dashboard.title')}</h1>
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatCard icon="📦" label="إجمالي المنتجات" value={fmt(totalProducts)} />
-        <StatCard icon="📁" label="التصنيفات" value={fmt(totalCategories)} />
+        <StatCard icon="📦" label={t('dashboard.totalProducts')} value={fmt(totalProducts)} />
+        <StatCard icon="📁" label={t('dashboard.categories')} value={fmt(totalCategories)} />
         <StatCard
           icon="📈"
-          label="متوسط هامش الربح"
+          label={t('dashboard.avgMargin')}
           value={avgMargin !== null ? `${avgMargin.toFixed(1)}%` : '—'}
           valueClass={avgMargin === null ? 'text-slate-400' : avgMargin >= 20 ? 'text-emerald-600' : 'text-amber-600'}
         />
-        <StatCard icon="💰" label="إجمالي قيمة الكتالوج" value={fmt(totalValue)} />
+        <StatCard icon="💰" label={t('dashboard.totalCatalogValue')} value={fmt(totalValue)} />
       </div>
 
       {/* Category chart + Margin buckets */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <div className="bg-white rounded-xl border border-slate-200 p-4">
-          <h2 className="text-sm font-semibold text-slate-700 mb-4">أعلى التصنيفات</h2>
+          <h2 className="text-sm font-semibold text-slate-700 mb-4">{t('dashboard.topCategories')}</h2>
           {byCategory.length === 0 ? (
-            <p className="text-sm text-slate-400">لا توجد تصنيفات بها منتجات</p>
+            <p className="text-sm text-slate-400">{t('dashboard.noCategoriesWithProducts')}</p>
           ) : (
             <div className="space-y-3">
               {byCategory.map(cat => (
@@ -167,14 +171,14 @@ export default function DashboardPage() {
         </div>
 
         <div className="bg-white rounded-xl border border-slate-200 p-4">
-          <h2 className="text-sm font-semibold text-slate-700 mb-4">توزيع هامش الربح</h2>
+          <h2 className="text-sm font-semibold text-slate-700 mb-4">{t('dashboard.marginDistribution')}</h2>
           {pricedProducts.length === 0 ? (
-            <p className="text-sm text-slate-400">أضف سعر الشراء والبيع للمنتجات لعرض هذه البيانات</p>
+            <p className="text-sm text-slate-400">{t('dashboard.noPricingData')}</p>
           ) : (
             <div className="space-y-3">
-              <BucketRow emoji="🟢" label="عالي (أكثر من 30%)" count={buckets.high} total={margins.length} colorClass="bg-emerald-500" />
-              <BucketRow emoji="🟡" label="متوسط (15–30%)" count={buckets.mid} total={margins.length} colorClass="bg-amber-400" />
-              <BucketRow emoji="🔴" label="منخفض (أقل من 15%)" count={buckets.low} total={margins.length} colorClass="bg-red-400" />
+              <BucketRow emoji="🟢" label={t('dashboard.marginHigh')} count={buckets.high} total={margins.length} colorClass="bg-emerald-500" />
+              <BucketRow emoji="🟡" label={t('dashboard.marginMid')}  count={buckets.mid}  total={margins.length} colorClass="bg-amber-400" />
+              <BucketRow emoji="🔴" label={t('dashboard.marginLow')}  count={buckets.low}  total={margins.length} colorClass="bg-red-400" />
             </div>
           )}
         </div>
@@ -183,7 +187,7 @@ export default function DashboardPage() {
       {/* Top 10 by margin */}
       {topProducts.length > 0 && (
         <div className="bg-white rounded-xl border border-slate-200 p-4">
-          <h2 className="text-sm font-semibold text-slate-700 mb-4">أعلى 10 منتجات ربحية</h2>
+          <h2 className="text-sm font-semibold text-slate-700 mb-4">{t('dashboard.top10Products')}</h2>
           <div className="space-y-3">
             {topProducts.map((p, i) => (
               <div key={p.id} className="flex items-center gap-3">

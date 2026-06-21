@@ -1,9 +1,11 @@
 import { NavLink, useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { useAuth } from '../context/AuthContext'
 import { useSync } from '../context/SyncContext'
 import logoNavbar from '/files/logo-navbar.svg'
 
 export default function Navbar() {
+  const { t, i18n } = useTranslation()
   const { user, signOut } = useAuth()
   const navigate = useNavigate()
   const { syncing, pendingCount, lastSync, isOnline, handleSync } = useSync()
@@ -11,6 +13,10 @@ export default function Navbar() {
   async function handleLogout() {
     await signOut()
     navigate('/login')
+  }
+
+  function toggleLang() {
+    i18n.changeLanguage(i18n.language === 'ar' ? 'en' : 'ar')
   }
 
   return (
@@ -28,7 +34,7 @@ export default function Navbar() {
               }`
             }
           >
-            الفئات
+            {t('nav.categories')}
           </NavLink>
           <NavLink
             to="/products"
@@ -40,7 +46,7 @@ export default function Navbar() {
               }`
             }
           >
-            المنتجات
+            {t('nav.products')}
           </NavLink>
           <NavLink
             to="/dashboard"
@@ -52,7 +58,7 @@ export default function Navbar() {
               }`
             }
           >
-            التحليلات
+            {t('nav.analytics')}
           </NavLink>
         </div>
 
@@ -61,14 +67,14 @@ export default function Navbar() {
           {/* Online/Offline indicator */}
           <span
             className={`w-2 h-2 rounded-full shrink-0 ${isOnline ? 'bg-emerald-400' : 'bg-red-400'}`}
-            title={isOnline ? 'متصل' : 'غير متصل'}
+            title={isOnline ? t('nav.online') : t('nav.offline')}
           />
 
           {/* Sync button */}
           <button
             onClick={handleSync}
             disabled={syncing || !isOnline}
-            title={lastSync ? `آخر مزامنة: ${new Date(lastSync).toLocaleTimeString('ar-EG')}` : 'لم تتم مزامنة بعد'}
+            title={lastSync ? t('nav.lastSync', { time: new Date(lastSync).toLocaleTimeString(i18n.language === 'ar' ? 'ar-EG' : 'en-US') }) : t('nav.neverSynced')}
             className="relative flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs
               bg-blue-50 text-blue-700 hover:bg-blue-100
               disabled:opacity-50 disabled:cursor-not-allowed
@@ -81,12 +87,21 @@ export default function Navbar() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                 d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
-            {syncing ? 'مزامنة...' : 'مزامنة'}
+            {syncing ? t('nav.syncing') : t('nav.sync')}
             {pendingCount > 0 && !syncing && (
               <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center leading-none">
                 {pendingCount > 9 ? '9+' : pendingCount}
               </span>
             )}
+          </button>
+
+          {/* Language toggle */}
+          <button
+            onClick={toggleLang}
+            className="px-2 py-1 rounded-lg text-xs font-semibold text-slate-500 hover:bg-slate-100 hover:text-indigo-600 transition-colors border border-slate-200"
+            title={t('nav.lang')}
+          >
+            {t('nav.lang')}
           </button>
 
           <img src={logoNavbar} alt="DokkanX" className="h-8 w-auto" />
@@ -100,7 +115,7 @@ export default function Navbar() {
           <button
             onClick={handleLogout}
             className="p-1.5 rounded-lg text-slate-500 hover:bg-red-50 hover:text-red-600 transition-colors"
-            title="تسجيل الخروج"
+            title={t('nav.logout')}
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}

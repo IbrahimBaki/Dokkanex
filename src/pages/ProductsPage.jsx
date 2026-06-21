@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { useAuth } from '../context/AuthContext'
 import { useSync } from '../context/SyncContext'
 import { getProducts, getCategories, deleteProduct } from '../lib/offlineOps'
@@ -21,6 +22,7 @@ function Spinner() {
 }
 
 export default function ProductsPage() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const { user } = useAuth()
   const { syncVersion, syncing } = useSync()
@@ -79,7 +81,7 @@ export default function ProductsPage() {
       const data = await getProducts(user.id)
       setProducts(data.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)))
     } catch (e) {
-      setError('فشل تحميل المنتجات: ' + e.message)
+      setError(t('products.failedToLoad', { error: e.message }))
     }
   }
 
@@ -100,7 +102,7 @@ export default function ProductsPage() {
       setProducts(prev => prev.filter(p => p.id !== toDelete.id))
       setToDelete(null)
     } catch (e) {
-      setError('فشل حذف المنتج: ' + e.message)
+      setError(t('products.failedToDelete', { error: e.message }))
     } finally {
       setDeleting(false)
     }
@@ -131,27 +133,27 @@ export default function ProductsPage() {
                 onClick={toggleSelectionMode}
                 className="text-sm text-slate-500 hover:text-slate-700 transition-colors"
               >
-                إلغاء
+                {t('products.cancel')}
               </button>
               <button
                 onClick={selectAll}
                 className="text-sm text-indigo-600 font-medium hover:text-indigo-700 transition-colors"
               >
-                تحديد الكل
+                {t('products.selectAll')}
               </button>
             </>
           ) : (
             <>
               <span className="text-slate-500 text-sm">
                 {filtered.length !== products.length
-                  ? `${filtered.length} / ${products.length}`
-                  : products.length} منتج
+                  ? t('products.filtered', { filtered: filtered.length, total: products.length })
+                  : t('products.count', { count: products.length })}
               </span>
               <div className="flex items-center gap-0.5 bg-slate-100 rounded-lg p-0.5">
                 <button
                   onClick={() => setView('grid')}
                   className={`p-1.5 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-                  title="عرض شبكي"
+                  title={t('products.gridView')}
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -161,7 +163,7 @@ export default function ProductsPage() {
                 <button
                   onClick={() => setView('list')}
                   className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-                  title="عرض قائمة"
+                  title={t('products.listView')}
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -172,7 +174,7 @@ export default function ProductsPage() {
               <button
                 onClick={toggleSelectionMode}
                 className="p-1.5 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
-                title="تحديد للتصدير"
+                title={t('products.selectForExport')}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -183,7 +185,9 @@ export default function ProductsPage() {
           )}
         </div>
         <h1 className="text-xl font-bold text-slate-800">
-          {selectionMode && selectedIds.size > 0 ? `${selectedIds.size} محدد` : 'المنتجات'}
+          {selectionMode && selectedIds.size > 0
+            ? t('products.selectedCount', { count: selectedIds.size })
+            : t('products.title')}
         </h1>
       </div>
 
@@ -215,7 +219,7 @@ export default function ProductsPage() {
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
           </svg>
-          <p className="text-sm">جاري تحميل البيانات من السيرفر...</p>
+          <p className="text-sm">{t('products.loadingFromServer')}</p>
         </div>
       ) : filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-slate-400">
@@ -225,13 +229,13 @@ export default function ProductsPage() {
           </svg>
           {search || selectedCategory ? (
             <>
-              <p className="font-semibold text-slate-500">لا توجد نتائج</p>
-              <p className="text-sm mt-1">جرّب تغيير كلمة البحث أو الفئة</p>
+              <p className="font-semibold text-slate-500">{t('products.noResults')}</p>
+              <p className="text-sm mt-1">{t('products.tryDifferentSearch')}</p>
             </>
           ) : (
             <>
-              <p className="font-semibold text-slate-500">لا توجد منتجات بعد</p>
-              <p className="text-sm mt-1">أضف منتجاً جديداً بالضغط على +</p>
+              <p className="font-semibold text-slate-500">{t('products.noProducts')}</p>
+              <p className="text-sm mt-1">{t('products.addFirstProduct')}</p>
             </>
           )}
         </div>
@@ -326,7 +330,7 @@ export default function ProductsPage() {
       <button
         onClick={() => navigate('/add')}
         className="fixed bottom-6 left-4 w-14 h-14 bg-indigo-600 text-white rounded-full shadow-lg shadow-indigo-300 flex items-center justify-center hover:bg-indigo-700 active:scale-95 transition-all z-30"
-        aria-label="إضافة منتج"
+        aria-label={t('products.addProduct')}
       >
         <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -336,8 +340,8 @@ export default function ProductsPage() {
       {/* Delete Confirmation */}
       <ConfirmDialog
         open={!!toDelete}
-        title="حذف المنتج"
-        message={`هل أنت متأكد من حذف "${toDelete?.name}"؟ لا يمكن التراجع عن هذا الإجراء.`}
+        title={t('products.deleteTitle')}
+        message={t('products.deleteConfirm', { name: toDelete?.name })}
         onConfirm={handleDelete}
         onCancel={() => setToDelete(null)}
         loading={deleting}
@@ -346,7 +350,7 @@ export default function ProductsPage() {
       {/* Export floating bar */}
       {selectionMode && selectedIds.size > 0 && (
         <div className="fixed bottom-6 inset-x-4 z-30 flex items-center justify-between gap-3 bg-indigo-600 text-white rounded-2xl px-4 py-3 shadow-xl shadow-indigo-300">
-          <span className="text-sm font-semibold">{selectedIds.size} منتج محدد</span>
+          <span className="text-sm font-semibold">{t('products.selectedCount', { count: selectedIds.size })}</span>
           <button
             onClick={() => setShowExport(true)}
             className="flex items-center gap-2 bg-white text-indigo-700 font-bold text-sm px-4 py-1.5 rounded-xl hover:bg-indigo-50 active:scale-95 transition-all"
@@ -355,7 +359,7 @@ export default function ProductsPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                 d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
             </svg>
-            تصدير ومشاركة
+            {t('products.exportAndShare')}
           </button>
         </div>
       )}

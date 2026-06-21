@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { FIELD_LABELS, downloadImage, shareAsImage, exportAsPDF, shareAsText } from '../lib/exportUtils'
+import { useTranslation } from 'react-i18next'
+import { getFieldLabels, downloadImage, shareAsImage, exportAsPDF, shareAsText } from '../lib/exportUtils'
 
 const ALL_FIELDS = ['name', 'category', 'selling_price', 'wholesale_price', 'updated_at']
 
@@ -13,6 +14,7 @@ function Spinner() {
 }
 
 export default function ExportModal({ products, categoryMap, onClose }) {
+  const { t } = useTranslation()
   const [fields, setFields] = useState(['name', 'selling_price', 'category'])
   const [busy, setBusy] = useState(null)
   const [copied, setCopied] = useState(false)
@@ -35,11 +37,13 @@ export default function ExportModal({ products, categoryMap, onClose }) {
     }
   }
 
+  const fieldLabels = getFieldLabels()
+
   const actions = [
     {
       key: 'text',
-      label: copied ? 'تم النسخ!' : 'نص / واتساب',
-      desc: 'نسخ أو مشاركة كنص',
+      label: copied ? t('export.copied') : t('export.textWhatsapp'),
+      desc: t('export.textDesc'),
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -51,8 +55,8 @@ export default function ExportModal({ products, categoryMap, onClose }) {
     },
     {
       key: 'image-share',
-      label: 'صورة — مشاركة',
-      desc: 'شارك كصورة PNG',
+      label: t('export.imageShare'),
+      desc: t('export.imageShareDesc'),
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -64,8 +68,8 @@ export default function ExportModal({ products, categoryMap, onClose }) {
     },
     {
       key: 'image-dl',
-      label: 'صورة — تنزيل',
-      desc: 'حفظ كملف PNG',
+      label: t('export.imageDownload'),
+      desc: t('export.imageDownloadDesc'),
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -78,7 +82,7 @@ export default function ExportModal({ products, categoryMap, onClose }) {
     {
       key: 'pdf',
       label: 'PDF',
-      desc: 'تصدير كملف PDF',
+      desc: t('export.pdfDesc'),
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -98,7 +102,6 @@ export default function ExportModal({ products, categoryMap, onClose }) {
       <div
         className="bg-white w-full sm:max-w-sm sm:rounded-2xl rounded-t-2xl overflow-hidden shadow-2xl"
         onClick={e => e.stopPropagation()}
-        dir="rtl"
       >
         {/* Handle */}
         <div className="flex justify-center pt-3 pb-1 sm:hidden">
@@ -108,8 +111,8 @@ export default function ExportModal({ products, categoryMap, onClose }) {
         {/* Header */}
         <div className="px-4 pt-3 pb-2 flex items-center justify-between">
           <div>
-            <h2 className="text-base font-bold text-slate-800">تصدير ومشاركة</h2>
-            <p className="text-xs text-slate-500 mt-0.5">{products.length} منتج محدد</p>
+            <h2 className="text-base font-bold text-slate-800">{t('export.title')}</h2>
+            <p className="text-xs text-slate-500 mt-0.5">{t('export.productCount', { count: products.length })}</p>
           </div>
           <button
             onClick={onClose}
@@ -124,7 +127,7 @@ export default function ExportModal({ products, categoryMap, onClose }) {
         <div className="px-4 pb-5 space-y-4">
           {/* Field picker */}
           <div>
-            <p className="text-xs font-semibold text-slate-500 mb-2">الحقول المُدرجة</p>
+            <p className="text-xs font-semibold text-slate-500 mb-2">{t('export.includedFields')}</p>
             <div className="flex flex-wrap gap-2">
               {ALL_FIELDS.map(f => (
                 <button
@@ -136,7 +139,7 @@ export default function ExportModal({ products, categoryMap, onClose }) {
                       : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
                   }`}
                 >
-                  {FIELD_LABELS[f]}
+                  {fieldLabels[f]}
                 </button>
               ))}
             </div>
@@ -144,7 +147,7 @@ export default function ExportModal({ products, categoryMap, onClose }) {
 
           {/* Actions */}
           <div>
-            <p className="text-xs font-semibold text-slate-500 mb-2">طريقة التصدير</p>
+            <p className="text-xs font-semibold text-slate-500 mb-2">{t('export.exportMethod')}</p>
             <div className="grid grid-cols-2 gap-2">
               {actions.map(a => (
                 <button

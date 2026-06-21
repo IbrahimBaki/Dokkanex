@@ -1,24 +1,30 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { useAuth } from '../context/AuthContext'
 import logoMark from '/files/logo-mark.svg'
 
-function translateError(error) {
+function translateError(error, t) {
   if (!error) return ''
   const msg = error.message?.toLowerCase() ?? ''
-  if (msg.includes('invalid login credentials')) return 'البريد الإلكتروني أو كلمة المرور غير صحيحة'
-  if (msg.includes('email not confirmed')) return 'يرجى تأكيد البريد الإلكتروني أولاً'
-  if (msg.includes('too many requests')) return 'محاولات كثيرة، يرجى الانتظار قليلاً'
-  return 'حدث خطأ، يرجى المحاولة مرة أخرى'
+  if (msg.includes('invalid login credentials')) return t('auth.login.errors.invalidCredentials')
+  if (msg.includes('email not confirmed'))       return t('auth.login.errors.emailNotConfirmed')
+  if (msg.includes('too many requests'))         return t('auth.login.errors.tooManyRequests')
+  return t('auth.login.errors.generic')
 }
 
 export default function LoginPage() {
+  const { t, i18n } = useTranslation()
   const { signIn } = useAuth()
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  function toggleLang() {
+    i18n.changeLanguage(i18n.language === 'ar' ? 'en' : 'ar')
+  }
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -27,7 +33,7 @@ export default function LoginPage() {
     const { error } = await signIn(email, password)
     setLoading(false)
     if (error) {
-      setError(translateError(error))
+      setError(translateError(error, t))
     } else {
       navigate('/')
     }
@@ -37,18 +43,27 @@ export default function LoginPage() {
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
 
+        <div className="flex justify-end mb-2">
+          <button
+            onClick={toggleLang}
+            className="px-3 py-1 rounded-lg text-xs font-semibold text-slate-500 hover:bg-slate-200 hover:text-indigo-600 transition-colors border border-slate-200 bg-white"
+          >
+            {t('nav.lang')}
+          </button>
+        </div>
+
         <div className="text-center mb-8">
-          <img src={logoMark} alt="Dokanex" className="w-16 h-16 mx-auto mb-3 object-contain" />
+          <img src={logoMark} alt="DokkanX" className="w-16 h-16 mx-auto mb-3 object-contain" />
           <h1 className="text-2xl font-bold text-slate-800">دكان <span className="text-amber-500">إكس</span></h1>
-          <p className="text-slate-500 text-sm mt-1">نظام إدارة المتجر والمنتجات</p>
+          <p className="text-slate-500 text-sm mt-1">{t('auth.brandSub')}</p>
         </div>
 
         <div className="card p-6">
-          <h2 className="text-lg font-bold text-slate-800 mb-5 text-center">تسجيل الدخول</h2>
+          <h2 className="text-lg font-bold text-slate-800 mb-5 text-center">{t('auth.login.title')}</h2>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="form-label">البريد الإلكتروني</label>
+              <label className="form-label">{t('auth.login.email')}</label>
               <input
                 type="email"
                 value={email}
@@ -63,7 +78,7 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <label className="form-label">كلمة المرور</label>
+              <label className="form-label">{t('auth.login.password')}</label>
               <input
                 type="password"
                 value={password}
@@ -98,14 +113,14 @@ export default function LoginPage() {
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
                 </svg>
               )}
-              {loading ? 'جاري تسجيل الدخول...' : 'تسجيل الدخول'}
+              {loading ? t('auth.login.submitting') : t('auth.login.submit')}
             </button>
           </form>
 
           <p className="text-center text-sm text-slate-500 mt-5">
-            ليس لديك حساب؟{' '}
+            {t('auth.login.noAccount')}{' '}
             <Link to="/register" className="text-indigo-600 font-medium hover:underline">
-              إنشاء حساب جديد
+              {t('auth.login.createAccount')}
             </Link>
           </p>
         </div>

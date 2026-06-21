@@ -1,4 +1,8 @@
+import { useTranslation } from 'react-i18next'
+
 export default function SearchBar({ value, onChange }) {
+  const { t } = useTranslation()
+
   return (
     <div className="relative">
       <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none">
@@ -11,7 +15,7 @@ export default function SearchBar({ value, onChange }) {
         type="text"
         value={value}
         onChange={e => onChange(e.target.value)}
-        placeholder="ابحث عن منتج..."
+        placeholder={t('search.placeholder')}
         className="input-field pr-10 pl-3"
       />
       {value && (

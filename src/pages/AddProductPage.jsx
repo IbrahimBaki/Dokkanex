@@ -1,7 +1,9 @@
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import ProductForm from '../components/ProductForm'
 
 export default function AddProductPage() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
 
   return (
@@ -15,7 +17,7 @@ export default function AddProductPage() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
         </button>
-        <h1 className="text-xl font-bold text-slate-800">إضافة منتج جديد</h1>
+        <h1 className="text-xl font-bold text-slate-800">{t('addProduct.title')}</h1>
       </div>
 
       <div className="card p-5">

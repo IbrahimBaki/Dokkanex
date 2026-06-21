@@ -1,19 +1,21 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { useAuth } from '../context/AuthContext'
 import logoMark from '/files/logo-mark.svg'
 
-function translateError(error) {
+function translateError(error, t) {
   if (!error) return ''
   const msg = error.message?.toLowerCase() ?? ''
-  if (msg.includes('user already registered')) return 'هذا البريد الإلكتروني مسجل مسبقاً'
-  if (msg.includes('invalid email')) return 'البريد الإلكتروني غير صحيح'
-  if (msg.includes('password should be at least')) return 'كلمة المرور يجب أن تكون 6 أحرف على الأقل'
-  if (msg.includes('too many requests')) return 'محاولات كثيرة، يرجى الانتظار قليلاً'
-  return 'حدث خطأ، يرجى المحاولة مرة أخرى'
+  if (msg.includes('user already registered'))        return t('auth.register.errors.alreadyRegistered')
+  if (msg.includes('invalid email'))                  return t('auth.register.errors.invalidEmail')
+  if (msg.includes('password should be at least'))    return t('auth.register.errors.passwordLength')
+  if (msg.includes('too many requests'))              return t('auth.register.errors.tooManyRequests')
+  return t('auth.register.errors.generic')
 }
 
 export default function RegisterPage() {
+  const { t, i18n } = useTranslation()
   const { signUp } = useAuth()
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
@@ -22,16 +24,20 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
+  function toggleLang() {
+    i18n.changeLanguage(i18n.language === 'ar' ? 'en' : 'ar')
+  }
+
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
-    if (password !== confirm) return setError('كلمة المرور وتأكيدها غير متطابقتين')
-    if (password.length < 6) return setError('كلمة المرور يجب أن تكون 6 أحرف على الأقل')
+    if (password !== confirm) return setError(t('auth.register.errors.passwordMismatch'))
+    if (password.length < 6)  return setError(t('auth.register.errors.passwordTooShort'))
     setLoading(true)
     const { error } = await signUp(email, password)
     setLoading(false)
     if (error) {
-      setError(translateError(error))
+      setError(translateError(error, t))
     } else {
       navigate('/')
     }
@@ -41,18 +47,27 @@ export default function RegisterPage() {
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
 
+        <div className="flex justify-end mb-2">
+          <button
+            onClick={toggleLang}
+            className="px-3 py-1 rounded-lg text-xs font-semibold text-slate-500 hover:bg-slate-200 hover:text-indigo-600 transition-colors border border-slate-200 bg-white"
+          >
+            {t('nav.lang')}
+          </button>
+        </div>
+
         <div className="text-center mb-8">
-          <img src={logoMark} alt="Dokanex" className="w-16 h-16 mx-auto mb-3 object-contain" />
+          <img src={logoMark} alt="DokkanX" className="w-16 h-16 mx-auto mb-3 object-contain" />
           <h1 className="text-2xl font-bold text-slate-800">دكان <span className="text-amber-500">إكس</span></h1>
-          <p className="text-slate-500 text-sm mt-1">نظام إدارة المتجر والمنتجات</p>
+          <p className="text-slate-500 text-sm mt-1">{t('auth.brandSub')}</p>
         </div>
 
         <div className="card p-6">
-          <h2 className="text-lg font-bold text-slate-800 mb-5 text-center">إنشاء حساب جديد</h2>
+          <h2 className="text-lg font-bold text-slate-800 mb-5 text-center">{t('auth.register.title')}</h2>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="form-label">البريد الإلكتروني</label>
+              <label className="form-label">{t('auth.register.email')}</label>
               <input
                 type="email"
                 value={email}
@@ -67,7 +82,7 @@ export default function RegisterPage() {
             </div>
 
             <div>
-              <label className="form-label">كلمة المرور</label>
+              <label className="form-label">{t('auth.register.password')}</label>
               <input
                 type="password"
                 value={password}
@@ -82,7 +97,7 @@ export default function RegisterPage() {
             </div>
 
             <div>
-              <label className="form-label">تأكيد كلمة المرور</label>
+              <label className="form-label">{t('auth.register.confirmPassword')}</label>
               <input
                 type="password"
                 value={confirm}
@@ -117,14 +132,14 @@ export default function RegisterPage() {
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
                 </svg>
               )}
-              {loading ? 'جاري إنشاء الحساب...' : 'إنشاء حساب'}
+              {loading ? t('auth.register.submitting') : t('auth.register.submit')}
             </button>
           </form>
 
           <p className="text-center text-sm text-slate-500 mt-5">
-            لديك حساب بالفعل؟{' '}
+            {t('auth.register.hasAccount')}{' '}
             <Link to="/login" className="text-indigo-600 font-medium hover:underline">
-              تسجيل الدخول
+              {t('auth.register.login')}
             </Link>
           </p>
         </div>

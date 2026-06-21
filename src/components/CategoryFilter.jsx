@@ -1,4 +1,8 @@
+import { useTranslation } from 'react-i18next'
+
 export default function CategoryFilter({ categories, selected, onChange }) {
+  const { t } = useTranslation()
+
   return (
     <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
       <button
@@ -9,7 +13,7 @@ export default function CategoryFilter({ categories, selected, onChange }) {
             : 'bg-white text-slate-600 border border-slate-300 hover:border-indigo-300 hover:text-indigo-600'
         }`}
       >
-        الكل
+        {t('filter.all')}
       </button>
       {categories.map(cat => (
         <button

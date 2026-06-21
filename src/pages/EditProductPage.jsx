@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import ProductForm from '../components/ProductForm'
 import { getProductById } from '../lib/offlineOps'
 import { timeAgo } from '../lib/timeAgo'
 
 export default function EditProductPage() {
+  const { t, i18n } = useTranslation()
   const { id } = useParams()
   const navigate = useNavigate()
   const [product, setProduct] = useState(null)
@@ -20,12 +22,12 @@ export default function EditProductPage() {
     try {
       const data = await getProductById(id)
       if (!data) {
-        setError('لم يتم العثور على المنتج')
+        setError(t('editProduct.notFound'))
       } else {
         setProduct(data)
       }
     } catch (e) {
-      setError('فشل تحميل المنتج: ' + e.message)
+      setError(t('editProduct.failedToLoad', { error: e.message }))
     } finally {
       setLoading(false)
     }
@@ -46,9 +48,9 @@ export default function EditProductPage() {
     return (
       <div className="page-container">
         <div className="card p-8 text-center text-slate-500">
-          <p className="font-semibold mb-2">{error || 'منتج غير موجود'}</p>
+          <p className="font-semibold mb-2">{error || t('editProduct.doesNotExist')}</p>
           <button onClick={() => navigate('/products')} className="btn-primary mt-4 px-6">
-            العودة للمنتجات
+            {t('editProduct.backToProducts')}
           </button>
         </div>
       </div>
@@ -67,10 +69,10 @@ export default function EditProductPage() {
           </svg>
         </button>
         <div>
-          <h1 className="text-xl font-bold text-slate-800">تعديل المنتج</h1>
+          <h1 className="text-xl font-bold text-slate-800">{t('editProduct.title')}</h1>
           {product.updated_at || product.created_at ? (
             <p className="text-xs text-slate-400 mt-0.5">
-              آخر تعديل: {timeAgo(product.updated_at || product.created_at)}
+              {t('editProduct.lastEdited', { time: timeAgo(product.updated_at || product.created_at, i18n.language) })}
             </p>
           ) : null}
         </div>

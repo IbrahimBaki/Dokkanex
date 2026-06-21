@@ -1,0 +1,311 @@
+{
+  "nav": {
+    "categories": "الفئات",
+    "products": "المنتجات",
+    "analytics": "التحليلات",
+    "online": "متصل",
+    "offline": "غير متصل",
+    "lastSync": "آخر مزامنة: {{time}}",
+    "neverSynced": "لم تتم مزامنة بعد",
+    "syncing": "مزامنة...",
+    "sync": "مزامنة",
+    "logout": "تسجيل الخروج",
+    "lang": "EN"
+  },
+  "landing": {
+    "hero": {
+      "headline": "أدّر مخزنك",
+      "headlineSub": "بطريقة ذكية",
+      "subtext": "DokkanX تطبيق بسيط وسريع لإدارة منتجاتك وأسعارها وتصنيفاتها. كل اللي محتاجه في مكان واحد، من أي جهاز.",
+      "startFree": "ابدأ مجاناً",
+      "login": "سجّل دخولك",
+      "downloadWindows": "نزّل للويندوز",
+      "scrollDown": "نزّل لأسفل"
+    },
+    "features": {
+      "sectionLabel": "المميزات",
+      "heading": "كل اللي محتاجه دكانك",
+      "subtext": "أدوات بسيطة وشغّالة بتوفّر عليك وقت وجهد",
+      "products": { "title": "إدارة المنتجات", "desc": "ضيّف، عدّل، واحذف منتجاتك بسهولة تامة. سعر الجملة والبيع وتصنيف كل منتج في إيدك." },
+      "images":   { "title": "صور المنتجات",   "desc": "ارفع صورة لكل منتج من موبايلك أو لاب توبك. الصور بتتحفظ بأمان وبتتعرض بشكل احترافي." },
+      "search":   { "title": "بحث وفلترة",     "desc": "دوّر على أي منتج باسمه وفلتر حسب التصنيف. هتلاقيه في ثواني." },
+      "devices":  { "title": "بيشتغل على كل الأجهزة", "desc": "تطبيق ويب بيشتغل على الموبايل والكمبيوتر. ثبّته على شاشتك الرئيسية زي أي آبلكيشن تاني." }
+    },
+    "how": {
+      "sectionLabel": "بيشتغل إزاي",
+      "heading": "تلات خطوات وبس",
+      "subtext": "مش محتاج ساعات. في دقايق تبقى جاهز",
+      "register": { "n": "١", "title": "سجّل حسابك",   "desc": "افتح حساب مجاني بإيميلك وكلمة السر. بياناتك خصوصية ومأمونة." },
+      "add":      { "n": "٢", "title": "ضيّف منتجاتك", "desc": "حط اسم المنتج والأسعار والصورة والتصنيف. كل ده في ثواني." },
+      "manage":   { "n": "٣", "title": "أدّر مخزنك",   "desc": "اتفرّج، دوّر، عدّل، وسعّر من أي مكان وفي أي وقت." }
+    },
+    "download": {
+      "sectionLabel": "تطبيق الويندوز",
+      "heading": "اشتغل بدون إنترنت",
+      "subtext": "حمّل نسخة الويندوز وأدّر منتجاتك حتى لو الشبكة وقفت. البيانات بتتزامن تلقائياً لمّا الإنترنت يرجع.",
+      "appName": "DokkanX for Windows",
+      "appVersion": "الإصدار 1.1.0 · يدعم Windows 10 / 11 · 64-bit",
+      "downloadBtn": "تحميل مجاني",
+      "installHeading": "خطوات التثبيت",
+      "installSubtext": "أربع خطوات وتبقى جاهز",
+      "warning": "لو ظهرت رسالة \"Windows protected your PC\" — اضغط <strong>More info</strong> ثم <strong>Run anyway</strong>. هذا تحذير عادي لأي تطبيق جديد مش مسجّل في Microsoft.",
+      "s1": { "n": "١", "title": "حمّل ملف الإعداد", "desc": "اضغط زر التحميل وحمّل ملف \"DokkanX-Setup.exe\" (حوالي 80 ميجا)." },
+      "s2": { "n": "٢", "title": "شغّل الإعداد",    "desc": "افتح الملف اللي حمّلته واضغط \"Install\". مش محتاج صلاحيات مدير." },
+      "s3": { "n": "٣", "title": "سجّل دخولك",     "desc": "افتح التطبيق وسجّل بنفس حسابك الموجود على الويب — بياناتك هتتزامن تلقائياً." },
+      "s4": { "n": "٤", "title": "اشتغل Offline",   "desc": "دلوقتي تقدر تضيف وتعدّل المنتجات من غير نت. أوّل ما الإنترنت يرجع هتتزامن تلقائياً." }
+    },
+    "cta": {
+      "heading": "عايز تبدأ؟",
+      "subtext": "انضم وابدأ إدارة منتجاتك دلوقتي. مجاناً 100%.",
+      "button": "افتح حسابك دلوقتي"
+    },
+    "footer": {
+      "features": "المميزات",
+      "how": "بيشتغل إزاي",
+      "download": "تحميل الويندوز",
+      "login": "سجّل دخولك",
+      "register": "افتح حساب",
+      "rights": "جميع الحقوق محفوظة"
+    }
+  },
+  "auth": {
+    "brandSub": "نظام إدارة المتجر والمنتجات",
+    "login": {
+      "title": "تسجيل الدخول",
+      "email": "البريد الإلكتروني",
+      "password": "كلمة المرور",
+      "submit": "تسجيل الدخول",
+      "submitting": "جاري تسجيل الدخول...",
+      "noAccount": "ليس لديك حساب؟",
+      "createAccount": "إنشاء حساب جديد",
+      "errors": {
+        "invalidCredentials": "البريد الإلكتروني أو كلمة المرور غير صحيحة",
+        "emailNotConfirmed": "يرجى تأكيد البريد الإلكتروني أولاً",
+        "tooManyRequests": "محاولات كثيرة، يرجى الانتظار قليلاً",
+        "generic": "حدث خطأ، يرجى المحاولة مرة أخرى"
+      }
+    },
+    "register": {
+      "title": "إنشاء حساب جديد",
+      "email": "البريد الإلكتروني",
+      "password": "كلمة المرور",
+      "confirmPassword": "تأكيد كلمة المرور",
+      "submit": "إنشاء حساب",
+      "submitting": "جاري إنشاء الحساب...",
+      "hasAccount": "لديك حساب بالفعل؟",
+      "login": "تسجيل الدخول",
+      "errors": {
+        "passwordMismatch": "كلمة المرور وتأكيدها غير متطابقتين",
+        "passwordTooShort": "كلمة المرور يجب أن تكون 6 أحرف على الأقل",
+        "alreadyRegistered": "هذا البريد الإلكتروني مسجل مسبقاً",
+        "invalidEmail": "البريد الإلكتروني غير صحيح",
+        "tooManyRequests": "محاولات كثيرة، يرجى الانتظار قليلاً",
+        "generic": "حدث خطأ، يرجى المحاولة مرة أخرى"
+      }
+    }
+  },
+  "products": {
+    "title": "المنتجات",
+    "count": "{{count}} منتج",
+    "filtered": "{{filtered}} / {{total}}",
+    "cancel": "إلغاء",
+    "selectAll": "تحديد الكل",
+    "selectedCount": "{{count}} محدد",
+    "gridView": "عرض شبكي",
+    "listView": "عرض قائمة",
+    "selectForExport": "تحديد للتصدير",
+    "addProduct": "إضافة منتج",
+    "loadingFromServer": "جاري تحميل البيانات من السيرفر...",
+    "noResults": "لا توجد نتائج",
+    "tryDifferentSearch": "جرّب تغيير كلمة البحث أو الفئة",
+    "noProducts": "لا توجد منتجات بعد",
+    "addFirstProduct": "أضف منتجاً جديداً بالضغط على +",
+    "exportAndShare": "تصدير ومشاركة",
+    "deleteTitle": "حذف المنتج",
+    "deleteConfirm": "هل أنت متأكد من حذف \"{{name}}\"؟ لا يمكن التراجع عن هذا الإجراء.",
+    "failedToLoad": "فشل تحميل المنتجات: {{error}}",
+    "failedToDelete": "فشل حذف المنتج: {{error}}"
+  },
+  "productCard": {
+    "sellingPrice": "سعر البيع",
+    "wholesalePrice": "سعر الجملة",
+    "lastEdited": "آخر تعديل:",
+    "options": "خيارات",
+    "details": "تفاصيل",
+    "edit": "تعديل",
+    "delete": "حذف"
+  },
+  "productForm": {
+    "name": "اسم المنتج",
+    "namePlaceholder": "أدخل اسم المنتج",
+    "image": "صورة المنتج",
+    "imagePreviewAlt": "معاينة",
+    "compressingImage": "جاري ضغط الصورة...",
+    "clickToSelectImage": "اضغط لاختيار صورة",
+    "worksOffline": "يعمل بدون إنترنت • JPG, PNG, WEBP",
+    "wholesalePrice": "سعر الجملة",
+    "sellingPrice": "سعر البيع",
+    "category": "الفئة",
+    "selectCategory": "— اختر فئة —",
+    "addNewCategory": "+ إضافة فئة جديدة",
+    "newCategoryName": "اسم الفئة الجديدة",
+    "add": "إضافة",
+    "saving": "جاري الحفظ...",
+    "saveChanges": "حفظ التعديلات",
+    "addProduct": "إضافة المنتج",
+    "cancel": "إلغاء",
+    "errors": {
+      "nameRequired": "اسم المنتج مطلوب",
+      "invalidWholesale": "سعر الجملة غير صحيح",
+      "invalidSelling": "سعر البيع غير صحيح",
+      "imageError": "فشل معالجة الصورة، جرّب صورة أخرى",
+      "categoryAdd": "فشل إضافة الفئة: {{error}}",
+      "saveFailed": "فشل حفظ المنتج: {{error}}"
+    }
+  },
+  "addProduct": {
+    "title": "إضافة منتج جديد"
+  },
+  "editProduct": {
+    "title": "تعديل المنتج",
+    "lastEdited": "آخر تعديل: {{time}}",
+    "notFound": "لم يتم العثور على المنتج",
+    "failedToLoad": "فشل تحميل المنتج: {{error}}",
+    "doesNotExist": "منتج غير موجود",
+    "backToProducts": "العودة للمنتجات"
+  },
+  "categories": {
+    "title": "الفئات",
+    "count": "{{count}} فئة",
+    "addNew": "إضافة فئة جديدة",
+    "namePlaceholder": "اسم الفئة",
+    "add": "إضافة",
+    "noCategories": "لا توجد فئات بعد",
+    "addToOrganize": "أضف فئة لتنظيم منتجاتك",
+    "deleteTitle": "حذف الفئة",
+    "deleteConfirm": "هل أنت متأكد من حذف فئة \"{{name}}\"؟ لن تُحذف المنتجات المرتبطة بها.",
+    "errors": {
+      "nameRequired": "اسم الفئة مطلوب",
+      "failedToLoad": "فشل تحميل الفئات: {{error}}",
+      "failedToAdd": "فشل إضافة الفئة: {{error}}",
+      "failedToEdit": "فشل تعديل الفئة: {{error}}",
+      "failedToDelete": "فشل حذف الفئة: {{error}}"
+    }
+  },
+  "confirmDialog": {
+    "cancel": "إلغاء",
+    "confirm": "نعم، احذف"
+  },
+  "dashboard": {
+    "title": "لوحة التحليلات",
+    "noData": "لا توجد بيانات لعرضها",
+    "addProductsFirst": "أضف منتجات أولاً لرؤية التحليلات",
+    "totalProducts": "إجمالي المنتجات",
+    "categories": "التصنيفات",
+    "avgMargin": "متوسط هامش الربح",
+    "totalCatalogValue": "إجمالي قيمة الكتالوج",
+    "topCategories": "أعلى التصنيفات",
+    "noCategoriesWithProducts": "لا توجد تصنيفات بها منتجات",
+    "of": "من",
+    "marginDistribution": "توزيع هامش الربح",
+    "noPricingData": "أضف سعر الشراء والبيع للمنتجات لعرض هذه البيانات",
+    "marginHigh": "عالي (أكثر من 30%)",
+    "marginMid": "متوسط (15–30%)",
+    "marginLow": "منخفض (أقل من 15%)",
+    "top10Products": "أعلى 10 منتجات ربحية",
+    "uncategorized": "بدون فئة"
+  },
+  "export": {
+    "title": "تصدير ومشاركة",
+    "productCount": "{{count}} منتج محدد",
+    "includedFields": "الحقول المُدرجة",
+    "exportMethod": "طريقة التصدير",
+    "copied": "تم النسخ!",
+    "textWhatsapp": "نص / واتساب",
+    "textDesc": "نسخ أو مشاركة كنص",
+    "imageShare": "صورة — مشاركة",
+    "imageShareDesc": "شارك كصورة PNG",
+    "imageDownload": "صورة — تنزيل",
+    "imageDownloadDesc": "حفظ كملف PNG",
+    "pdfDesc": "تصدير كملف PDF",
+    "fields": {
+      "name": "اسم المنتج",
+      "category": "الفئة",
+      "selling_price": "سعر البيع",
+      "wholesale_price": "سعر الجملة",
+      "updated_at": "آخر تعديل"
+    }
+  },
+  "search": {
+    "placeholder": "ابحث عن منتج..."
+  },
+  "filter": {
+    "all": "الكل"
+  },
+  "offline": {
+    "notice": "وضع غير متصل — التغييرات محفوظة محلياً وستُزامَن عند الاتصال"
+  },
+  "imageExport": {
+    "productList": "قائمة المنتجات",
+    "products": "منتج",
+    "product": "المنتج",
+    "price": "السعر",
+    "productCount": "عدد المنتجات",
+    "totalSelling": "إجمالي سعر البيع",
+    "totalWholesale": "إجمالي سعر الجملة",
+    "avgMargin": "متوسط الهامش",
+    "currency": "ج.م",
+    "profit": "ربح",
+    "wholesale": "جملة",
+    "shareTitle": "قائمة المنتجات"
+  },
+  "shareText": {
+    "header": "قائمة المنتجات ({{count}})",
+    "category": "الفئة: {{name}}",
+    "sellingPrice": "سعر البيع: {{price}}",
+    "wholesalePrice": "سعر الجملة: {{price}}",
+    "lastEdited": "آخر تعديل: {{time}}"
+  },
+  "admin": {
+    "badge": "مشرف",
+    "nav": {
+      "overview": "نظرة عامة",
+      "users": "المستخدمون",
+      "products": "كل المنتجات"
+    },
+    "overview": {
+      "title": "نظرة عامة على النظام",
+      "totalUsers": "إجمالي المستخدمين",
+      "activeUsers": "المستخدمون النشطون",
+      "deactivatedUsers": "الحسابات المعطّلة",
+      "totalProducts": "إجمالي المنتجات",
+      "totalCategories": "إجمالي الفئات"
+    },
+    "users": {
+      "title": "المستخدمون",
+      "count": "مستخدم",
+      "searchPlaceholder": "ابحث بالبريد الإلكتروني...",
+      "colEmail": "البريد الإلكتروني",
+      "colJoined": "تاريخ الانضمام",
+      "colStatus": "الحالة",
+      "colActions": "الإجراءات",
+      "statusActive": "نشط",
+      "statusBanned": "معطّل",
+      "activate": "تفعيل",
+      "deactivate": "تعطيل",
+      "activateTitle": "تفعيل الحساب",
+      "deactivateTitle": "تعطيل الحساب",
+      "activateConfirm": "هل تريد تفعيل حساب {{email}}؟",
+      "deactivateConfirm": "هل تريد تعطيل حساب {{email}}؟ لن يتمكن من تسجيل الدخول."
+    },
+    "products": {
+      "title": "كل المنتجات",
+      "count": "منتج",
+      "searchPlaceholder": "ابحث باسم المنتج...",
+      "colName": "المنتج",
+      "colOwner": "المالك",
+      "colPrice": "سعر البيع",
+      "colDate": "تاريخ الإنشاء"
+    }
+  }
+}

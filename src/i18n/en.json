@@ -1,0 +1,311 @@
+{
+  "nav": {
+    "categories": "Categories",
+    "products": "Products",
+    "analytics": "Analytics",
+    "online": "Online",
+    "offline": "Offline",
+    "lastSync": "Last sync: {{time}}",
+    "neverSynced": "Never synced",
+    "syncing": "Syncing...",
+    "sync": "Sync",
+    "logout": "Log out",
+    "lang": "عربي"
+  },
+  "landing": {
+    "hero": {
+      "headline": "Manage your store",
+      "headlineSub": "the smart way",
+      "subtext": "DokkanX is a simple, fast app to manage your products, prices, and categories. Everything you need in one place, on any device.",
+      "startFree": "Get started free",
+      "login": "Sign in",
+      "downloadWindows": "Download for Windows",
+      "scrollDown": "Scroll down"
+    },
+    "features": {
+      "sectionLabel": "Features",
+      "heading": "Everything your store needs",
+      "subtext": "Simple tools that save you time and effort",
+      "products": { "title": "Product Management", "desc": "Add, edit, and delete products with ease. Wholesale price, selling price, and category right at your fingertips." },
+      "images":   { "title": "Product Images",    "desc": "Upload a photo for each product from your phone or laptop. Images are stored securely and displayed professionally." },
+      "search":   { "title": "Search & Filter",    "desc": "Find any product by name and filter by category. Locate it in seconds." },
+      "devices":  { "title": "Works on All Devices", "desc": "A web app that works on mobile and desktop. Install it on your home screen like any native app." }
+    },
+    "how": {
+      "sectionLabel": "How It Works",
+      "heading": "Just Three Steps",
+      "subtext": "No lengthy setup. You are ready in minutes.",
+      "register": { "n": "1", "title": "Create Your Account", "desc": "Open a free account with your email and password. Your data is private and secure." },
+      "add":      { "n": "2", "title": "Add Your Products",   "desc": "Enter the product name, prices, image, and category. Done in seconds." },
+      "manage":   { "n": "3", "title": "Manage Your Inventory", "desc": "Browse, search, edit, and reprice from anywhere, at any time." }
+    },
+    "download": {
+      "sectionLabel": "Windows App",
+      "heading": "Work Without Internet",
+      "subtext": "Download the Windows version and manage your products even when the network is down. Data syncs automatically when you reconnect.",
+      "appName": "DokkanX for Windows",
+      "appVersion": "Version 1.1.0 · Windows 10 / 11 · 64-bit",
+      "downloadBtn": "Free Download",
+      "installHeading": "Installation Steps",
+      "installSubtext": "Four steps and you are ready",
+      "warning": "If you see a \"Windows protected your PC\" message — click <strong>More info</strong> then <strong>Run anyway</strong>. This is a standard warning for any new app not yet registered with Microsoft.",
+      "s1": { "n": "1", "title": "Download Setup File", "desc": "Click the download button and save the \"DokkanX-Setup.exe\" file (~80 MB)." },
+      "s2": { "n": "2", "title": "Run the Installer",   "desc": "Open the downloaded file and click \"Install\". No admin rights needed." },
+      "s3": { "n": "3", "title": "Sign In",              "desc": "Open the app and sign in with your existing web account — your data syncs automatically." },
+      "s4": { "n": "4", "title": "Work Offline",         "desc": "Now you can add and edit products without internet. Data syncs automatically when you reconnect." }
+    },
+    "cta": {
+      "heading": "Ready to Start?",
+      "subtext": "Join and start managing your products right now. 100% free.",
+      "button": "Open Your Account Now"
+    },
+    "footer": {
+      "features": "Features",
+      "how": "How It Works",
+      "download": "Download for Windows",
+      "login": "Sign in",
+      "register": "Create account",
+      "rights": "All rights reserved"
+    }
+  },
+  "auth": {
+    "brandSub": "Store & Product Management System",
+    "login": {
+      "title": "Sign In",
+      "email": "Email Address",
+      "password": "Password",
+      "submit": "Sign In",
+      "submitting": "Signing in...",
+      "noAccount": "Don't have an account?",
+      "createAccount": "Create a new account",
+      "errors": {
+        "invalidCredentials": "Incorrect email or password",
+        "emailNotConfirmed": "Please confirm your email first",
+        "tooManyRequests": "Too many attempts, please wait a moment",
+        "generic": "An error occurred, please try again"
+      }
+    },
+    "register": {
+      "title": "Create New Account",
+      "email": "Email Address",
+      "password": "Password",
+      "confirmPassword": "Confirm Password",
+      "submit": "Create Account",
+      "submitting": "Creating account...",
+      "hasAccount": "Already have an account?",
+      "login": "Sign in",
+      "errors": {
+        "passwordMismatch": "Passwords do not match",
+        "passwordTooShort": "Password must be at least 6 characters",
+        "alreadyRegistered": "This email is already registered",
+        "invalidEmail": "Invalid email address",
+        "tooManyRequests": "Too many attempts, please wait a moment",
+        "generic": "An error occurred, please try again"
+      }
+    }
+  },
+  "products": {
+    "title": "Products",
+    "count": "{{count}} product",
+    "filtered": "{{filtered}} / {{total}}",
+    "cancel": "Cancel",
+    "selectAll": "Select All",
+    "selectedCount": "{{count}} selected",
+    "gridView": "Grid view",
+    "listView": "List view",
+    "selectForExport": "Select for export",
+    "addProduct": "Add product",
+    "loadingFromServer": "Loading data from server...",
+    "noResults": "No results found",
+    "tryDifferentSearch": "Try changing the search term or category",
+    "noProducts": "No products yet",
+    "addFirstProduct": "Add a new product by tapping +",
+    "exportAndShare": "Export & Share",
+    "deleteTitle": "Delete Product",
+    "deleteConfirm": "Are you sure you want to delete \"{{name}}\"? This action cannot be undone.",
+    "failedToLoad": "Failed to load products: {{error}}",
+    "failedToDelete": "Failed to delete product: {{error}}"
+  },
+  "productCard": {
+    "sellingPrice": "Selling Price",
+    "wholesalePrice": "Wholesale Price",
+    "lastEdited": "Last edited:",
+    "options": "Options",
+    "details": "Details",
+    "edit": "Edit",
+    "delete": "Delete"
+  },
+  "productForm": {
+    "name": "Product Name",
+    "namePlaceholder": "Enter product name",
+    "image": "Product Image",
+    "imagePreviewAlt": "Preview",
+    "compressingImage": "Compressing image...",
+    "clickToSelectImage": "Click to select image",
+    "worksOffline": "Works offline • JPG, PNG, WEBP",
+    "wholesalePrice": "Wholesale Price",
+    "sellingPrice": "Selling Price",
+    "category": "Category",
+    "selectCategory": "— Select a category —",
+    "addNewCategory": "+ Add new category",
+    "newCategoryName": "New category name",
+    "add": "Add",
+    "saving": "Saving...",
+    "saveChanges": "Save Changes",
+    "addProduct": "Add Product",
+    "cancel": "Cancel",
+    "errors": {
+      "nameRequired": "Product name is required",
+      "invalidWholesale": "Invalid wholesale price",
+      "invalidSelling": "Invalid selling price",
+      "imageError": "Failed to process image, please try another",
+      "categoryAdd": "Failed to add category: {{error}}",
+      "saveFailed": "Failed to save product: {{error}}"
+    }
+  },
+  "addProduct": {
+    "title": "Add New Product"
+  },
+  "editProduct": {
+    "title": "Edit Product",
+    "lastEdited": "Last edited: {{time}}",
+    "notFound": "Product not found",
+    "failedToLoad": "Failed to load product: {{error}}",
+    "doesNotExist": "Product does not exist",
+    "backToProducts": "Back to Products"
+  },
+  "categories": {
+    "title": "Categories",
+    "count": "{{count}} category",
+    "addNew": "Add New Category",
+    "namePlaceholder": "Category name",
+    "add": "Add",
+    "noCategories": "No categories yet",
+    "addToOrganize": "Add a category to organize your products",
+    "deleteTitle": "Delete Category",
+    "deleteConfirm": "Are you sure you want to delete the \"{{name}}\" category? Products linked to it will not be deleted.",
+    "errors": {
+      "nameRequired": "Category name is required",
+      "failedToLoad": "Failed to load categories: {{error}}",
+      "failedToAdd": "Failed to add category: {{error}}",
+      "failedToEdit": "Failed to edit category: {{error}}",
+      "failedToDelete": "Failed to delete category: {{error}}"
+    }
+  },
+  "confirmDialog": {
+    "cancel": "Cancel",
+    "confirm": "Yes, Delete"
+  },
+  "dashboard": {
+    "title": "Analytics Dashboard",
+    "noData": "No data to display",
+    "addProductsFirst": "Add products first to view analytics",
+    "totalProducts": "Total Products",
+    "categories": "Categories",
+    "avgMargin": "Avg. Profit Margin",
+    "totalCatalogValue": "Total Catalog Value",
+    "topCategories": "Top Categories",
+    "noCategoriesWithProducts": "No categories have products",
+    "of": "of",
+    "marginDistribution": "Profit Margin Distribution",
+    "noPricingData": "Add buying and selling prices to view this data",
+    "marginHigh": "High (above 30%)",
+    "marginMid": "Medium (15–30%)",
+    "marginLow": "Low (below 15%)",
+    "top10Products": "Top 10 Most Profitable Products",
+    "uncategorized": "Uncategorized"
+  },
+  "export": {
+    "title": "Export & Share",
+    "productCount": "{{count}} product selected",
+    "includedFields": "Included Fields",
+    "exportMethod": "Export Method",
+    "copied": "Copied!",
+    "textWhatsapp": "Text / WhatsApp",
+    "textDesc": "Copy or share as text",
+    "imageShare": "Image — Share",
+    "imageShareDesc": "Share as PNG image",
+    "imageDownload": "Image — Download",
+    "imageDownloadDesc": "Save as PNG file",
+    "pdfDesc": "Export as PDF file",
+    "fields": {
+      "name": "Product Name",
+      "category": "Category",
+      "selling_price": "Selling Price",
+      "wholesale_price": "Wholesale Price",
+      "updated_at": "Last Edited"
+    }
+  },
+  "search": {
+    "placeholder": "Search products..."
+  },
+  "filter": {
+    "all": "All"
+  },
+  "offline": {
+    "notice": "Offline mode — changes saved locally and will sync when reconnected"
+  },
+  "imageExport": {
+    "productList": "Product List",
+    "products": "products",
+    "product": "Product",
+    "price": "Price",
+    "productCount": "Product Count",
+    "totalSelling": "Total Selling Price",
+    "totalWholesale": "Total Wholesale Price",
+    "avgMargin": "Avg. Margin",
+    "currency": "EGP",
+    "profit": "profit",
+    "wholesale": "wholesale",
+    "shareTitle": "Product List"
+  },
+  "shareText": {
+    "header": "Product List ({{count}})",
+    "category": "Category: {{name}}",
+    "sellingPrice": "Selling: {{price}}",
+    "wholesalePrice": "Wholesale: {{price}}",
+    "lastEdited": "Last edited: {{time}}"
+  },
+  "admin": {
+    "badge": "Admin",
+    "nav": {
+      "overview": "Overview",
+      "users": "Users",
+      "products": "All Products"
+    },
+    "overview": {
+      "title": "System Overview",
+      "totalUsers": "Total Users",
+      "activeUsers": "Active Users",
+      "deactivatedUsers": "Deactivated Users",
+      "totalProducts": "Total Products",
+      "totalCategories": "Total Categories"
+    },
+    "users": {
+      "title": "Users",
+      "count": "users",
+      "searchPlaceholder": "Search by email...",
+      "colEmail": "Email",
+      "colJoined": "Joined",
+      "colStatus": "Status",
+      "colActions": "Actions",
+      "statusActive": "Active",
+      "statusBanned": "Deactivated",
+      "activate": "Activate",
+      "deactivate": "Deactivate",
+      "activateTitle": "Activate User",
+      "deactivateTitle": "Deactivate User",
+      "activateConfirm": "Activate account for {{email}}?",
+      "deactivateConfirm": "Deactivate account for {{email}}? They will not be able to log in."
+    },
+    "products": {
+      "title": "All Products",
+      "count": "products",
+      "searchPlaceholder": "Search by product name...",
+      "colName": "Product",
+      "colOwner": "Owner",
+      "colPrice": "Selling Price",
+      "colDate": "Created"
+    }
+  }
+}

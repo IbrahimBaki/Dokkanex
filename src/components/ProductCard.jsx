@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { timeAgo } from '../lib/timeAgo'
 
 const PLACEHOLDER_BG = [
@@ -57,6 +58,7 @@ function DotsMenuIcon() {
 }
 
 export default function ProductCard({ product, categoryName, categoryId, onEdit, onDelete, view = 'grid', selectionMode = false, selected = false, onToggleSelect }) {
+  const { t, i18n } = useTranslation()
   const [imgError, setImgError] = useState(false)
   const imageSrc = product.image_base64 || product.image_url || null
   const [showDetail, setShowDetail] = useState(false)
@@ -81,7 +83,6 @@ export default function ProductCard({ product, categoryName, categoryId, onEdit,
           className={`card flex items-center gap-3 px-3 py-2.5 hover:shadow-md transition-shadow duration-200 ${selectionMode ? 'cursor-pointer' : ''} ${selected ? 'ring-2 ring-indigo-500 bg-indigo-50/40' : ''}`}
           onClick={selectionMode ? () => onToggleSelect(product.id) : undefined}
         >
-          {/* Selection checkbox */}
           {selectionMode && (
             <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${selected ? 'bg-indigo-600 border-indigo-600' : 'border-slate-300 bg-white'}`}>
               {selected && (
@@ -92,7 +93,6 @@ export default function ProductCard({ product, categoryName, categoryId, onEdit,
             </div>
           )}
 
-          {/* Thumbnail */}
           <div className="w-14 h-14 rounded-lg overflow-hidden shrink-0 bg-slate-100">
             {imageSrc && !imgError ? (
               <img
@@ -111,7 +111,6 @@ export default function ProductCard({ product, categoryName, categoryId, onEdit,
             )}
           </div>
 
-          {/* Info */}
           <div className="flex-1 min-w-0">
             {categoryName && (
               <span className={`text-xs font-semibold px-1.5 py-0.5 rounded-full inline-block mb-0.5 ${getCategoryColor(categoryId)}`}>
@@ -123,20 +122,19 @@ export default function ProductCard({ product, categoryName, categoryId, onEdit,
             </h3>
             <p className="text-base font-bold text-emerald-600 leading-tight mt-0.5">
               {product.selling_price}
-              <span className="text-xs font-normal text-emerald-500 mr-1">سعر البيع</span>
+              <span className="text-xs font-normal text-emerald-500 mx-1">{t('productCard.sellingPrice')}</span>
             </p>
             <p className="text-[10px] text-slate-400 leading-none mt-0.5">
-              آخر تعديل: {timeAgo(product.updated_at || product.created_at)}
+              {t('productCard.lastEdited')} {timeAgo(product.updated_at || product.created_at, i18n.language)}
             </p>
           </div>
 
-          {/* 3-dots menu */}
           {!selectionMode && (
             <div className="relative shrink-0" ref={menuRef}>
               <button
                 onClick={e => { e.stopPropagation(); setShowMenu(v => !v) }}
                 className="w-8 h-8 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center hover:bg-slate-200 transition-colors"
-                title="خيارات"
+                title={t('productCard.options')}
               >
                 <DotsMenuIcon />
               </button>
@@ -153,14 +151,14 @@ export default function ProductCard({ product, categoryName, categoryId, onEdit,
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                         d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                     </svg>
-                    تفاصيل
+                    {t('productCard.details')}
                   </button>
                   <button
                     onClick={e => { e.stopPropagation(); setShowMenu(false); onEdit(product) }}
                     className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-indigo-700 hover:bg-indigo-50 transition-colors"
                   >
                     <EditIcon />
-                    تعديل
+                    {t('productCard.edit')}
                   </button>
                   <div className="h-px bg-slate-100 mx-2" />
                   <button
@@ -168,7 +166,7 @@ export default function ProductCard({ product, categoryName, categoryId, onEdit,
                     className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
                   >
                     <DeleteIcon />
-                    حذف
+                    {t('productCard.delete')}
                   </button>
                 </div>
               )}
@@ -176,7 +174,6 @@ export default function ProductCard({ product, categoryName, categoryId, onEdit,
           )}
         </div>
 
-        {/* Detail sheet */}
         {showDetail && (
           <div
             className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4"
@@ -207,7 +204,7 @@ export default function ProductCard({ product, categoryName, categoryId, onEdit,
                 </button>
               </div>
 
-              <div className="p-4 pb-safe" dir="rtl">
+              <div className="p-4 pb-safe">
                 {categoryName && (
                   <span className={`text-xs font-semibold px-2 py-0.5 rounded-full inline-block mb-2 ${getCategoryColor(categoryId)}`}>
                     {categoryName}
@@ -215,16 +212,16 @@ export default function ProductCard({ product, categoryName, categoryId, onEdit,
                 )}
                 <h2 className="text-lg font-bold text-slate-800 leading-snug mb-1">{product.name}</h2>
                 <p className="text-xs text-slate-400 mb-4">
-                  آخر تعديل: {timeAgo(product.updated_at || product.created_at)}
+                  {t('productCard.lastEdited')} {timeAgo(product.updated_at || product.created_at, i18n.language)}
                 </p>
 
                 <div className="grid grid-cols-2 gap-3 mb-4">
                   <div className="bg-slate-50 rounded-xl p-3 text-center">
-                    <p className="text-xs text-slate-500 mb-1">سعر الجملة</p>
+                    <p className="text-xs text-slate-500 mb-1">{t('productCard.wholesalePrice')}</p>
                     <p className="text-xl font-bold text-slate-700">{product.wholesale_price}</p>
                   </div>
                   <div className="bg-emerald-50 rounded-xl p-3 text-center">
-                    <p className="text-xs text-emerald-600 mb-1">سعر البيع</p>
+                    <p className="text-xs text-emerald-600 mb-1">{t('productCard.sellingPrice')}</p>
                     <p className="text-xl font-bold text-emerald-700">{product.selling_price}</p>
                   </div>
                 </div>
@@ -235,14 +232,14 @@ export default function ProductCard({ product, categoryName, categoryId, onEdit,
                     className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 transition-colors"
                   >
                     <EditIcon />
-                    تعديل
+                    {t('productCard.edit')}
                   </button>
                   <button
                     onClick={() => { setShowDetail(false); onDelete(product) }}
                     className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium rounded-xl bg-red-50 text-red-700 hover:bg-red-100 transition-colors"
                   >
                     <DeleteIcon />
-                    حذف
+                    {t('productCard.delete')}
                   </button>
                 </div>
               </div>
@@ -299,13 +296,13 @@ export default function ProductCard({ product, categoryName, categoryId, onEdit,
 
         <div className="mt-auto text-xs">
           <div className="bg-emerald-50 rounded-lg p-2">
-            <div className="text-emerald-600 mb-0.5">سعر البيع</div>
+            <div className="text-emerald-600 mb-0.5">{t('productCard.sellingPrice')}</div>
             <div className="font-bold text-emerald-700 text-sm">{product.selling_price}</div>
           </div>
         </div>
 
         <p className="text-[10px] text-slate-400 leading-none">
-          آخر تعديل: {timeAgo(product.updated_at || product.created_at)}
+          {t('productCard.lastEdited')} {timeAgo(product.updated_at || product.created_at, i18n.language)}
         </p>
 
         {!selectionMode && (
@@ -315,14 +312,14 @@ export default function ProductCard({ product, categoryName, categoryId, onEdit,
               className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors"
             >
               <EditIcon />
-              تعديل
+              {t('productCard.edit')}
             </button>
             <button
               onClick={() => onDelete(product)}
               className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium rounded-lg bg-red-50 text-red-700 hover:bg-red-100 transition-colors"
             >
               <DeleteIcon />
-              حذف
+              {t('productCard.delete')}
             </button>
           </div>
         )}
