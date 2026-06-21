@@ -5,9 +5,15 @@ import { createClient } from '@supabase/supabase-js'
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const serviceRoleKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY
 
-export const adminSupabase = createClient(supabaseUrl, serviceRoleKey, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false
+let _client = null
+
+// Lazy init — client is created only when first needed, not at module load time.
+// This prevents a crash on app load when the service role key is not set.
+export function getAdminClient() {
+  if (!_client) {
+    _client = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { autoRefreshToken: false, persistSession: false }
+    })
   }
-})
+  return _client
+}
