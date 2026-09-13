@@ -1,14 +1,18 @@
 # دكانيكس — Dokanex
 
-Product management PWA built with React, Vite, Tailwind CSS, and Supabase.
+Arabic-first, bilingual, offline-first product-catalog PWA/desktop app built with React, Vite, Tailwind CSS, IndexedDB, and Supabase.
+
+For the implementation-validated architecture, data model, authorization caveats, and extension constraints, start at [the project-discovery index](docs/project-discovery/00-PROJECT-INDEX.md).
 
 ## Features
 
 - **Products** — grid view with image, wholesale price, selling price, and category badge
-- **Real-time sync** — Supabase Realtime keeps the product list live across devices
+- **Offline-first sync** — local IndexedDB changes are queued and pushed to Supabase when online
 - **Search & filter** — instant name search and category filter tabs
 - **Add / Edit / Delete** — full CRUD with image upload to Supabase Storage
-- **Categories** — separate page to add, rename, and delete categories
+- **Categories and analytics** — category CRUD plus catalog/margin dashboard
+- **Export/share** — selected products can be shared as text/image or exported as PDF
+- **Authentication and admin** — email/password accounts plus a superadmin UI (see security note in discovery docs)
 - **PWA** — installable on Android/iOS, works offline via service worker
 - **Arabic RTL** — full Arabic interface with right-to-left layout
 - **Electron-ready** — HashRouter routing works in Electron without a server
@@ -23,12 +27,15 @@ Product management PWA built with React, Vite, Tailwind CSS, and Supabase.
 | PWA | vite-plugin-pwa + Workbox |
 | Routing | React Router 6 (HashRouter) |
 
-## Database Schema
+## Data model
+
+The current code accesses Supabase `products` and `categories` directly and uses IndexedDB as its working store. The repository currently does **not** contain a canonical remote schema migration or RLS policy file, so the SQL below is a legacy sketch rather than a deployable source of truth. See [database discovery](docs/project-discovery/05-DATABASE.md).
 
 ```sql
 -- Categories
 create table categories (
   id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
   name text not null,
   created_at timestamptz default now()
 );
@@ -36,6 +43,7 @@ create table categories (
 -- Products
 create table products (
   id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
   name text not null,
   image_url text,
   wholesale_price numeric not null,
@@ -45,7 +53,7 @@ create table products (
 );
 ```
 
-Storage bucket: `product-images` (public)
+Storage bucket used by the client: `product-images` (the deployed bucket policy must be reviewed separately).
 
 ## Getting Started
 
@@ -107,19 +115,24 @@ Once deployed, open the URL in Chrome on Android → three-dot menu → **Add to
 ```
 src/
 ├── components/
-│   ├── CategoryFilter.jsx   # horizontal filter pills
-│   ├── ConfirmDialog.jsx    # delete confirmation modal
-│   ├── Navbar.jsx           # top navigation bar
-│   ├── ProductCard.jsx      # product grid card
-│   ├── ProductForm.jsx      # shared add/edit form
-│   └── SearchBar.jsx        # real-time search input
+│   ├── ProductForm.jsx      # local-first add/edit form
+│   ├── ProductCard.jsx      # grid/list/detail display
+│   ├── *Route.jsx           # auth/admin route guards
+│   └── *Layout.jsx          # signed-in/admin shells
+├── context/
+│   ├── AuthContext.jsx      # Supabase auth session
+│   └── SyncContext.jsx      # offline-sync state
 ├── pages/
-│   ├── AddProductPage.jsx   # /add route
-│   ├── CategoriesPage.jsx   # /categories route
-│   ├── EditProductPage.jsx  # /edit/:id route
-│   └── ProductsPage.jsx     # / route (main)
+│   ├── admin/               # superadmin pages
+│   ├── ProductsPage.jsx      # /products route
+│   ├── CategoriesPage.jsx    # /categories route
+│   └── DashboardPage.jsx     # /dashboard route
 ├── lib/
-│   └── supabase.js          # Supabase client + image helpers
+│   ├── db.js                # Dexie IndexedDB schema
+│   ├── offlineOps.js        # local CRUD/outbox
+│   ├── syncManager.js       # push/pull synchronization
+│   └── supabase.js          # normal Supabase client/storage helpers
+├── i18n/                    # Arabic/English translations
 ├── App.jsx                  # router setup
 └── main.jsx                 # entry point
 ```

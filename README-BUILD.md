@@ -13,11 +13,13 @@ cd Dokkanex
 ```
 
 ### 2. ضيف ملف `.env`
-اعمل ملف `.env` في جذر المشروع وحط فيه:
+اعمل ملف `.env` في جذر المشروع وحط فيه قيم مشروع Supabase الخاص بك:
 ```
-VITE_SUPABASE_URL=https://fntojupobuvrpryiodgh.supabase.co
-VITE_SUPABASE_ANON_KEY=sb_publishable_kNmRmc-sAZNnYfX-dHzKfA_boLBaQ42
+VITE_SUPABASE_URL=https://your-project-ref.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key
 ```
+
+> لا تضع أو تنشر مفتاح `service_role` في أي متغير يبدأ بـ `VITE_`؛ هذه المتغيرات تصل إلى كود المتصفح.
 
 ### 3. ثبّت الـ packages
 ```bash
@@ -46,7 +48,7 @@ dist-electron/
 | حجم الملف | حوالي 80–120MB — طبيعي لأن Electron جوّاه |
 | بعد التثبيت | هيظهر shortcut على الـ Desktop وفي قائمة Start |
 | أي تحديث | شغّل `npm run electron:build:win` تاني وبس |
-| الـ app بتشتغل offline؟ | الواجهة بتشتغل، بس Supabase محتاج إنترنت للبيانات |
+| الـ app بتشتغل offline؟ | العمليات على المنتجات والفئات تُحفَظ محلياً ثم تتزامن مع Supabase عند عودة الإنترنت |
 
 ---
 
