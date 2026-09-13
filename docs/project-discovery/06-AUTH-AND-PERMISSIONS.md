@@ -20,7 +20,7 @@
 
 ## Ownership enforcement
 
-Normal reads filter Supabase pull requests by `user_id`; local creates set it from the active session. Updates/deletes sent by sync filter only by row `id`, so database RLS is the actual security boundary. Current RLS/GRANT state is not versioned in the checkout.
+Normal reads filter Supabase pull requests by `user_id`; local creates set it from the active session. Updates/deletes sent by sync filter only by row `id`, so database RLS is the actual security boundary. The later pulled baseline now versions the observed RLS/GRANT state. V2 inventory additionally grants authenticated users SELECT only for their own balances/movements and exposes posting/archive/metadata operations through ownership-checking authenticated RPCs; direct V2 movement/balance mutation is denied and local integration-tested.
 
 ## Critical privileged path
 

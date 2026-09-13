@@ -17,6 +17,10 @@ flowchart LR
 
 The client has no traditional backend layers. `src/lib/offlineOps.js` is the closest equivalent to a data service/repository; `src/lib/syncManager.js` is the application synchronization coordinator. Supabase supplies authentication, database REST endpoints, and object storage directly to the renderer.
 
+### Later schema evidence and V2 foundation
+
+This document originally described source-visible V1 behavior only. The subsequently pulled production baseline and `20260913235959_v2_inventory_foundation.sql` establish a separate database-side V2 foundation: append-only inventory movement RPCs, materialized balances, metadata-version/unit triggers, and RLS. Dexie v2, the generic outbox, and V1 UI do not call these objects yet; they become active application architecture only in later V2 substeps.
+
 ## Request/data paths
 
 - Normal catalog reads use Dexie only (`getProducts(userId)`, `getCategories(userId)`). `SyncProvider` starts a push-then-pull sync after login and when the browser becomes online.

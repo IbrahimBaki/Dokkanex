@@ -2,7 +2,7 @@
 
 ## Evidence boundary
 
-The current tree has no database migration, schema dump, seed, factory, or Supabase policy file. The remote PostgreSQL schema and RLS policy state therefore cannot be fully verified without Supabase project access. The following remote columns are confirmed by current client reads/writes, not by a schema artifact.
+This section was originally source-code-only. A later pulled production baseline is now versioned as `supabase/migrations/20260913182956_remote_schema.sql`; it confirms tables, constraints, grants, and policies as of that pull. `20260913235959_v2_inventory_foundation.sql` is the additive V2 local-tested foundation. The production-data audit is aggregate-only and establishes that legacy inventory/ERP fields are dormant in its snapshot.
 
 | Remote table | Confirmed columns used | Relationships / notes |
 |---|---|---|
@@ -29,7 +29,7 @@ erDiagram
 | `sync_queue` | Auto-increment `id`; table, operation, record id, data, timestamp |
 | `app_meta` | Key/value metadata, currently `last_sync` |
 
-No remote indexes, FK constraints, uniqueness constraints, trigger behavior, soft deletes, audit history, or RLS policies can be asserted from current files. Historical branch SQL is explicitly not used as current schema evidence.
+The pulled baseline confirms `products.category_id -> categories.id ON DELETE SET NULL`, duplicate permissive V1 ownership policies, legacy movement RLS policies without normal browser data grants, and the broad existing `product-images` policy. V2 adds versioning/archive product columns, `inventory_balances`, V2 movement columns, RPCs, and narrow V2 read/RPC access. It deliberately does not clean up legacy product/category policies or Storage in this step.
 
 ## Schema consistency observations
 

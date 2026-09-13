@@ -25,3 +25,7 @@ User navigates to `/admin/*` -> `AdminRoute` checks session app metadata -> admi
 ## Analytics
 
 `DashboardPage` reads local products/categories after a sync-version change and computes totals, category counts, product margins, buckets, and top ten. "Total catalog value" is the sum of selling prices once per product; it is not inventory valuation and does not use quantities.
+
+## V2 inventory database boundary (not yet a user workflow)
+
+Step 3B adds local-tested database RPCs for opening stock, manual movements, stock counts, metadata updates, and archive. No current page, Dexie store, or sync path invokes them yet. The V1 workflows above therefore remain the active production-client behavior until the later offline/sync and UI substeps are explicitly implemented.

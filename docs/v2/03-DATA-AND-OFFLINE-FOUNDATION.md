@@ -139,6 +139,14 @@ The browser submits only a stable client-generated movement/operation UUID and r
 
 The canonical hash is over the normalized allowed fields (including operation UUID, user/product identity, movement type, fixed-scale decimal strings, count base/target where relevant, correction reference, and permitted note/reason), not arbitrary client JSON key order or presentation formatting. The posting transaction stores this server-computed hash with the new row.
 
+### Step 3B-B.1 concurrency and no-change clarification
+
+Inventory RPCs acquire transaction advisory locks in one order: first a lock derived from the operation UUID, then a lock derived from the authenticated user ID, then perform UUID lookup and state validation. The first lock makes same-UUID retries/collisions serializable without exposing another user’s receipt. The second lock serializes each user’s V2 inventory transactions through sequence allocation and commit; `server_sequence` is therefore a safe **per-user** pull cursor, not a globally commit-ordered cursor.
+
+**Permanent server-sequence invariant:** every future server path that creates a non-legacy `stock_movements` row—including sale, purchase, sale return, and purchase return—must acquire this same authenticated-user advisory transaction lock before allocating `server_sequence`. Without that lock, the per-user sequence cannot be treated as a safe incremental sync cursor. Sales and Purchases are not implemented by this foundation.
+
+A stock count whose target equals the locked current balance returns typed `no_change`, writes no movement, and does not increment the balance revision. No durable operation receipt is created for that no-op. Step 3C must mark a received `no_change` response succeeded. If its response is lost, a retry can safely return `no_change` again while the state is unchanged, or a typed conflict after later activity; it must never create an artificial zero movement.
+
 ## 4. Inventory initialization and balance strategy
 
 ### Initialization truth table
@@ -205,6 +213,8 @@ Mutable metadata (name, category, image reference, selling price, threshold, and
 6. The V2 Core resolution is manual: user reviews current values and resubmits intentionally against the new version. Per-field merge is not required initially.
 
 This is deliberately stricter than the V1 generic queue because names/prices/categories/image references can otherwise predictably lose another device’s change. Inventory movements remain additive and do not use this metadata-version conflict path.
+
+**Step 3C retry note:** a metadata update can commit remotely while the client loses its response. If retry receives a stale-version conflict, Step 3C must pull the canonical product. It may resolve the operation as succeeded only when the intended whitelisted fields are already represented by that canonical product in a safely recognizable way; otherwise it preserves the local payload as a reviewable conflict and never silently overwrites.
 
 ## 8. Stock-count offline conflict policy
 

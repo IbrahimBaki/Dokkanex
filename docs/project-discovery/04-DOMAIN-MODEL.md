@@ -24,6 +24,8 @@ erDiagram
 
 Category deletion does not update local products that reference it. Whether remote referential behavior sets the product category to null is **unable to confirm** because the current schema/migrations are absent.
 
-## Historical, not active
+## Dormant remote ERP schema and V2 foundation
 
-Git feature branches contain an unmerged/removed ERP migration for customers, suppliers, invoices, purchases, stock movements, payments, and ledger entries. None has current UI, library calls, migration files, or routes on `master`; do not assume these concepts exist in the deployed schema.
+This document's earlier historical-Git conclusion was limited to source evidence. The later pulled remote baseline confirms that `customers`, `suppliers`, invoices/purchases and items, payments, ledger entries, and legacy `stock_movements` exist in the remote schema. The local production-backup audit found zero rows in each of those dormant ERP tables and in legacy `stock_movements`; none is an active V1 application domain.
+
+V2 now adds an **active database foundation**—`inventory_balances` plus V2-typed `stock_movements`—but no V2 UI, Dexie, or sync caller yet. Existing products remain Stock not set because no legacy quantity or movement value is adopted as inventory history.

@@ -2,9 +2,9 @@
 
 ## Current state
 
-No current unit, integration, browser/E2E, frontend-test, PHP test, test configuration, fixture, factory, seed, lint, formatter, static-analysis, or type-check script was found. `package.json` contains build/dev/preview/Electron scripts only. `npm ls --depth=0` resolves dependencies successfully.
+The original discovery found no tests. Step 3B-A/B now adds Vitest/JSDOM/fake-indexeddb unit coverage, a local PostgreSQL/Supabase integration suite, Playwright E2E scaffolding, and a development CI build/test workflow. The V2 local integration suite verifies migrations, RPC idempotency, stock-count conflict/retry, metadata versioning, RLS, archive, and balance rebuild; it must run only against local Supabase.
 
-GitHub Actions runs `npm install` then `npm run release` only for pushed `v*` tags; it does not run tests or a separate build validation job. There is no development CI trigger.
+GitHub Actions retains the tag-only release workflow and now has a development CI workflow for dependency installation, unit tests, and the production build. Local-Supabase integration and browser E2E jobs remain intentionally outside cloud CI until a safe local-service CI arrangement is added.
 
 ## Highest-risk missing coverage
 

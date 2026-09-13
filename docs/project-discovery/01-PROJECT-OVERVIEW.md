@@ -34,4 +34,4 @@ Versions above are resolved from `package-lock.json`/`npm ls`; `package.json` us
 - Administration: stats, user listing/ban/unban, and global product list.
 - Distribution: Vite PWA build; Electron packages for Linux, Windows, and macOS, with GitHub-release auto-update configuration.
 
-There is no application server, controller/service layer, server-side API, migrations, seeders, factories, queues, event bus, mailer, cache, or scheduled task in the current tree.
+The active V1 UI still has no conventional application server. Since the later pulled-schema evidence and V2 Step 3B foundation, the repository does contain a version-controlled Supabase baseline, an additive inventory migration, database RPCs/triggers, and local integration tests. These are database foundations, not yet active V1 UI workflows.
