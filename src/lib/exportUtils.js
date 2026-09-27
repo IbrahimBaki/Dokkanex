@@ -4,7 +4,7 @@ import { timeAgo } from './timeAgo'
 import i18n from '../i18n'
 
 export function getFieldLabels() {
-  const t = (k) => i18n.t(k)
+  const t = (k, opts) => i18n.t(k, opts)
   return {
     name:            t('export.fields.name'),
     category:        t('export.fields.category'),
@@ -22,9 +22,9 @@ export function buildShareText(products, fields, categoryMap) {
     if (fields.includes('name')) parts.push(p.name)
     if (fields.includes('category') && categoryMap[p.category_id])
       parts.push(t('shareText.category', { name: categoryMap[p.category_id].name }))
-    if (fields.includes('selling_price') && p.selling_price)
+    if (fields.includes('selling_price') && p.selling_price != null)
       parts.push(t('shareText.sellingPrice', { price: p.selling_price }))
-    if (fields.includes('wholesale_price') && p.wholesale_price)
+    if (fields.includes('wholesale_price') && p.wholesale_price != null)
       parts.push(t('shareText.wholesalePrice', { price: p.wholesale_price }))
     if (fields.includes('updated_at'))
       parts.push(t('shareText.lastEdited', { time: timeAgo(p.updated_at || p.created_at, lang) }))
@@ -33,26 +33,9 @@ export function buildShareText(products, fields, categoryMap) {
   return `${t('shareText.header', { count: products.length })}\n\n${lines.join('\n')}`
 }
 
-// Returns a deterministic color from a palette based on a string key
-function categoryColor(key) {
-  const palette = [
-    { bg: '#e0e7ff', text: '#4338ca' },
-    { bg: '#fce7f3', text: '#9d174d' },
-    { bg: '#d1fae5', text: '#065f46' },
-    { bg: '#fef3c7', text: '#92400e' },
-    { bg: '#dbeafe', text: '#1e40af' },
-    { bg: '#f3e8ff', text: '#6b21a8' },
-    { bg: '#ffedd5', text: '#9a3412' },
-    { bg: '#ccfbf1', text: '#0f766e' },
-  ]
-  let hash = 0
-  for (let i = 0; i < (key || '').length; i++) hash = (hash * 31 + key.charCodeAt(i)) & 0xffff
-  return palette[hash % palette.length]
-}
-
 // Renders a hidden div to a canvas and triggers PNG download / share
 export async function exportAsImage(products, fields, categoryMap) {
-  const t = (k) => i18n.t(k)
+  const t = (k, opts) => i18n.t(k, opts)
   const lang = i18n.language
   const isRtl = lang === 'ar'
   const currency = t('imageExport.currency')
@@ -80,8 +63,8 @@ export async function exportAsImage(products, fields, categoryMap) {
         <div style="font-size:13px;color:#c4b5fd;margin-top:4px;">${t('imageExport.productList')}</div>
       </div>
       <div style="text-align:${isRtl ? 'left' : 'right'};">
-        <div style="background:rgba(255,255,255,0.15);border-radius:999px;padding:6px 16px;display:inline-block;">
-          <span style="font-size:22px;font-weight:800;color:#fbbf24;">${products.length}</span>
+        <div style="display:inline-block;">
+          <span style="font-size:16px;font-weight:800;color:#fbbf24;">${products.length}</span>
           <span style="font-size:12px;color:#e0d9ff;margin-${isRtl ? 'right' : 'left'}:4px;">${t('imageExport.products')}</span>
         </div>
         <div style="font-size:11px;color:#a5b4fc;margin-top:6px;text-align:${isRtl ? 'left' : 'right'};">
@@ -106,7 +89,6 @@ export async function exportAsImage(products, fields, categoryMap) {
   const showDate  = fields.includes('updated_at')
 
   colHeader.innerHTML = `
-    <div style="width:32px;flex-shrink:0;"></div>
     <div style="flex:1;font-size:11px;font-weight:700;color:#4f46e5;">${showName ? t('imageExport.product') : ''}</div>
     ${showSell || showWhole ? `<div style="width:110px;flex-shrink:0;font-size:11px;font-weight:700;color:#4f46e5;text-align:${isRtl ? 'left' : 'right'};">${t('imageExport.price')}</div>` : ''}
   `
@@ -123,38 +105,28 @@ export async function exportAsImage(products, fields, categoryMap) {
       border-bottom:1px solid #f1f5f9;
     `
 
-    const num = document.createElement('div')
-    num.style.cssText = `
-      width:28px;height:28px;background:#4f46e5;border-radius:50%;
-      display:flex;align-items:center;justify-content:center;
-      font-size:12px;font-weight:800;color:#ffffff;flex-shrink:0;
-    `
-    num.textContent = i + 1
-    row.appendChild(num)
-
     const info = document.createElement('div')
     info.style.cssText = 'flex:1;min-width:0;'
 
     if (showName) {
       const nameLine = document.createElement('div')
-      nameLine.style.cssText = 'font-size:14px;font-weight:700;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'
+      nameLine.dir = isRtl ? 'rtl' : 'ltr'
+      nameLine.style.cssText = 'font-size:14px;font-weight:700;color:#1e293b;line-height:20px;white-space:normal;overflow:visible;word-break:break-word;unicode-bidi:plaintext;'
       nameLine.textContent = p.name
       info.appendChild(nameLine)
     }
 
     const metaParts = []
     if (showCat && categoryMap[p.category_id]) {
-      const cat = categoryMap[p.category_id]
-      const c = categoryColor(cat.name)
-      metaParts.push(`<span style="background:${c.bg};color:${c.text};font-size:10px;font-weight:600;padding:2px 8px;border-radius:999px;">${cat.name}</span>`)
+      metaParts.push(t("shareText.category", { name: categoryMap[p.category_id].name }))
     }
     if (showDate) {
-      metaParts.push(`<span style="color:#94a3b8;font-size:10px;">${timeAgo(p.updated_at || p.created_at, lang)}</span>`)
+      metaParts.push(timeAgo(p.updated_at || p.created_at, lang))
     }
     if (metaParts.length) {
-      const metaLine = document.createElement('div')
-      metaLine.style.cssText = 'margin-top:4px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;'
-      metaLine.innerHTML = metaParts.join('')
+      const metaLine = document.createElement("div")
+      metaLine.style.cssText = "margin-top:4px;font-size:11px;line-height:16px;color:#64748b;"
+      metaLine.textContent = metaParts.join(" • ")
       info.appendChild(metaLine)
     }
 
@@ -178,59 +150,13 @@ export async function exportAsImage(products, fields, categoryMap) {
         prices.appendChild(wp)
       }
 
-      if (showSell && showWhole && p.selling_price && p.wholesale_price) {
-        const margin = ((p.selling_price - p.wholesale_price) / p.selling_price * 100).toFixed(0)
-        if (margin > 0) {
-          const pill = document.createElement('div')
-          pill.style.cssText = 'margin-top:4px;background:#dcfce7;color:#15803d;font-size:10px;font-weight:700;padding:1px 6px;border-radius:999px;display:inline-block;'
-          pill.textContent = `${margin}% ${t('imageExport.profit')}`
-          prices.appendChild(pill)
-        }
-      }
-
       row.appendChild(prices)
     }
 
     container.appendChild(row)
   })
 
-  // ── Summary bar ──────────────────────────────────────────────────────────
-  const hasAnyPrice = showSell || showWhole
-  if (hasAnyPrice) {
-    const totalSell  = products.reduce((s, p) => s + (Number(p.selling_price)  || 0), 0)
-    const totalWhole = products.reduce((s, p) => s + (Number(p.wholesale_price) || 0), 0)
-    const avgMargin  = totalSell > 0 ? ((totalSell - totalWhole) / totalSell * 100).toFixed(1) : null
-
-    const summary = document.createElement('div')
-    summary.style.cssText = `
-      background:#eef2ff; padding:14px 20px;
-      display:flex; gap:0; border-top:2px solid #c7d2fe;
-    `
-
-    const stats = []
-    stats.push({ label: t('imageExport.productCount'), value: products.length, unit: t('imageExport.products') })
-    if (showSell)  stats.push({ label: t('imageExport.totalSelling'),   value: totalSell.toLocaleString(isRtl ? 'ar-EG' : 'en-US'),  unit: currency })
-    if (showWhole) stats.push({ label: t('imageExport.totalWholesale'), value: totalWhole.toLocaleString(isRtl ? 'ar-EG' : 'en-US'), unit: currency })
-    if (avgMargin !== null) stats.push({ label: t('imageExport.avgMargin'), value: `${avgMargin}%`, unit: '' })
-
-    stats.forEach((s, idx) => {
-      const cell = document.createElement('div')
-      cell.style.cssText = `
-        flex:1; text-align:center;
-        ${idx < stats.length - 1 ? 'border-left:1px solid #c7d2fe;' : ''}
-        padding: 0 8px;
-      `
-      cell.innerHTML = `
-        <div style="font-size:15px;font-weight:800;color:#4f46e5;">${s.value} <span style="font-size:10px;font-weight:600;color:#818cf8;">${s.unit}</span></div>
-        <div style="font-size:10px;color:#6366f1;margin-top:2px;">${s.label}</div>
-      `
-      summary.appendChild(cell)
-    })
-
-    container.appendChild(summary)
-  }
-
-  // ── Footer ───────────────────────────────────────────────────────────────
+  // ── Footer ─────────────────────────────────────────────────────────────
   const footer = document.createElement('div')
   footer.style.cssText = `
     padding:12px 20px; background:#1e1b4b;
@@ -289,28 +215,57 @@ export async function shareAsImage(products, fields, categoryMap) {
   })
 }
 
-export async function exportAsPDF(products, fields, categoryMap) {
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+export function getPdfPageLayout(canvasWidth, canvasHeight, pageWidth, pageHeight, margin = 15) {
+  const printableWidth = pageWidth - margin * 2
+  const printableHeight = pageHeight - margin * 2
+  const imageWidthAtFullPage = printableWidth
+  const imageHeightAtFullPage = (canvasHeight * imageWidthAtFullPage) / canvasWidth
 
-  const canvas = await exportAsImage(products, fields, categoryMap)
-  const imgData = canvas.toDataURL('image/png')
-
-  const margin = 15
-  const pageWidth  = doc.internal.pageSize.getWidth()
-  const pageHeight = doc.internal.pageSize.getHeight()
-  const imgWidth   = pageWidth - margin * 2
-  const imgHeight  = (canvas.height * imgWidth) / canvas.width
-
-  let y = margin
-  let remaining = imgHeight
-  while (remaining > 0) {
-    const sliceHeight = Math.min(remaining, pageHeight - margin * 2)
-    doc.addImage(imgData, 'PNG', margin, y, imgWidth, sliceHeight, '', 'FAST')
-    remaining -= sliceHeight
-    if (remaining > 0) { doc.addPage(); y = margin }
+  // A short, slightly-tall image looks best when it fills the page height and
+  // is centered horizontally. Very long lists still paginate at full width.
+  if (imageHeightAtFullPage > printableHeight && imageHeightAtFullPage <= printableHeight * 1.35) {
+    const imageHeight = printableHeight
+    const imageWidth = (canvasWidth * imageHeight) / canvasHeight
+    return [{
+      x: margin + (printableWidth - imageWidth) / 2,
+      y: margin,
+      width: imageWidth,
+      height: imageHeight,
+    }]
   }
 
-  doc.save(`dokkanx-products-${Date.now()}.pdf`)
+  const imageWidth = imageWidthAtFullPage
+  const imageHeight = imageHeightAtFullPage
+  if (imageHeight <= printableHeight) {
+    return [{
+      x: margin,
+      y: margin + (printableHeight - imageHeight) / 2,
+      width: imageWidth,
+      height: imageHeight,
+    }]
+  }
+
+  const pages = []
+  for (let offset = 0; offset < imageHeight; offset += printableHeight) {
+    pages.push({ x: margin, y: margin - offset, width: imageWidth, height: imageHeight })
+  }
+  return pages
+}
+
+export async function exportAsPDF(products, fields, categoryMap) {
+  // Landscape A4 provides a balanced canvas for the export-card aspect ratio.
+  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" })
+  const canvas = await exportAsImage(products, fields, categoryMap)
+  const imgData = canvas.toDataURL("image/png")
+  const pageWidth = doc.internal.pageSize.getWidth()
+  const pageHeight = doc.internal.pageSize.getHeight()
+  const pages = getPdfPageLayout(canvas.width, canvas.height, pageWidth, pageHeight)
+
+  pages.forEach((page, index) => {
+    if (index > 0) doc.addPage()
+    doc.addImage(imgData, "PNG", page.x, page.y, page.width, page.height, "", "FAST")
+  })
+  doc.save("dokkanx-products-" + Date.now() + ".pdf")
 }
 
 export async function shareAsText(products, fields, categoryMap) {

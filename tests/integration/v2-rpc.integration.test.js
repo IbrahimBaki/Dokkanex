@@ -2,7 +2,11 @@ import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 import { createClient } from '@supabase/supabase-js';
+import 'fake-indexeddb/auto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { createDatabase } from '../../src/lib/db.js';
+import { initializeStock } from '../../src/lib/inventoryLocal.js';
+import { createV2SyncRunner } from '../../src/lib/v2Sync.js';
 
 const USER_A = '11111111-1111-4111-8111-111111111111';
 const USER_B = '22222222-2222-4222-8222-222222222222';
@@ -135,6 +139,64 @@ afterAll(async () => {
 });
 
 describe('local V2 inventory migration, RPC, and RLS foundation', () => {
+  it('enforces authenticated product/category ownership and category association integrity', async () => {
+    const categoryA = randomUUID();
+    const categoryB = randomUUID();
+    await pool.query(
+      'INSERT INTO public.categories (id, name, user_id) VALUES ($1, $2, $3), ($4, $5, $6)',
+      [categoryA, 'A category', USER_A, categoryB, 'B category', USER_B],
+    );
+    const productA = await createProduct(USER_A);
+    const productB = await createProduct(USER_B);
+
+    expect((await asUser(USER_A, (client) => client.query('SELECT id FROM public.products WHERE id = $1', [productB]))).rows).toEqual([]);
+    expect((await asUser(USER_A, (client) => client.query('UPDATE public.products SET name = $2 WHERE id = $1', [productB, 'not allowed']))).rowCount).toBe(0);
+    expect((await asUser(USER_A, (client) => client.query('DELETE FROM public.products WHERE id = $1', [productB]))).rowCount).toBe(0);
+    await expect(asUser(USER_A, (client) => client.query(
+      'INSERT INTO public.products (id, name, wholesale_price, selling_price, user_id) VALUES ($1, $2, 1, 2, $3)',
+      [randomUUID(), 'wrong owner', USER_B],
+    ))).rejects.toMatchObject({ code: '42501' });
+    await expect(asUser(USER_A, (client) => client.query(
+      'INSERT INTO public.products (id, name, wholesale_price, selling_price, user_id, category_id) VALUES ($1, $2, 1, 2, $3, $4)',
+      [randomUUID(), 'wrong category owner', USER_A, categoryB],
+    ))).rejects.toMatchObject({ code: '23514' });
+    expect((await asUser(USER_A, (client) => client.query('UPDATE public.categories SET name = $2 WHERE id = $1', [categoryB, 'not allowed']))).rowCount).toBe(0);
+    expect((await asUser(USER_A, (client) => client.query('DELETE FROM public.categories WHERE id = $1', [categoryB]))).rowCount).toBe(0);
+    expect((await asUser(USER_A, (client) => client.query('SELECT id FROM public.categories WHERE id = $1', [categoryB]))).rows).toEqual([]);
+    await expect(asUser(USER_A, (client) => client.query(
+      'INSERT INTO public.categories (id, name, user_id) VALUES ($1, $2, $3)',
+      [randomUUID(), 'wrong owner category', USER_B],
+    ))).rejects.toMatchObject({ code: '42501' });
+
+    expect((await asUser(USER_A, (client) => client.query('UPDATE public.products SET category_id = $2 WHERE id = $1', [productA, categoryA]))).rowCount).toBe(1);
+    expect((await asUser(USER_A, (client) => client.query('SELECT id FROM public.categories WHERE id = $1', [categoryA]))).rows).toHaveLength(1);
+  });
+
+  it('keeps product-images writes scoped to the authenticated path prefix and reports product ownership drift', async () => {
+    const storagePolicies = await pool.query(
+      "SELECT policyname, cmd, COALESCE(qual, '') AS qual, COALESCE(with_check, '') AS with_check FROM pg_policies WHERE schemaname = 'storage' AND tablename = 'objects' AND policyname LIKE 'product_images_%' ORDER BY policyname",
+    );
+    expect(storagePolicies.rows.map(({ policyname, cmd }) => ({ policyname, cmd }))).toEqual([
+      { policyname: 'product_images_delete_own_prefix', cmd: 'DELETE' },
+      { policyname: 'product_images_insert_own_prefix', cmd: 'INSERT' },
+      { policyname: 'product_images_public_read', cmd: 'SELECT' },
+    ]);
+    for (const policy of storagePolicies.rows.filter(({ cmd }) => cmd === 'INSERT' || cmd === 'DELETE')) {
+      expect(`${policy.qual} ${policy.with_check}`).toContain("bucket_id = 'product-images'::text");
+      expect(`${policy.qual} ${policy.with_check}`).toContain("(auth.uid())::text");
+    }
+
+    const productId = await createProduct(USER_A);
+    await postMovement(USER_A, productId, 'opening', '3');
+    await pool.query('UPDATE public.inventory_balances SET user_id = $2 WHERE product_id = $1', [productId, USER_B]);
+    const drift = await pool.query('SELECT issue FROM public.v2_inventory_balance_drift() WHERE product_id = $1', [productId]);
+    expect(drift.rows).toEqual([{ issue: 'balance_product_owner_mismatch' }]);
+    await pool.query('UPDATE public.inventory_balances SET user_id = $2 WHERE product_id = $1', [productId, USER_A]);
+    await pool.query('UPDATE public.stock_movements SET user_id = $2 WHERE product_id = $1', [productId, USER_B]);
+    const movementDrift = await pool.query('SELECT issue FROM public.v2_inventory_balance_drift() WHERE product_id = $1', [productId]);
+    expect(movementDrift.rows).toEqual([{ issue: 'movement_product_owner_mismatch' }]);
+  });
+
   it('exposes the additive V2 schema without initializing legacy products', async () => {
     const productId = await createProduct(USER_A, 'legacy-compatible');
     const { rows } = await pool.query(
@@ -182,6 +244,37 @@ describe('local V2 inventory migration, RPC, and RLS foundation', () => {
     expect(afterCategoryDelete.error).toBeNull();
     expect(afterCategoryDelete.data).toEqual({ category_id: null, image_url: 'legacy-image-url' });
     await client.auth.signOut();
+  });
+
+  it('syncs an offline local opening through the authenticated browser RPC path', async () => {
+    const env = localSupabaseEnv();
+    const client = createClient(env.API_URL, env.ANON_KEY, { auth: { persistSession: false } });
+    const email = `v2-c2-${randomUUID()}@example.test`;
+    const password = 'local-test-password';
+    expect((await client.auth.signUp({ email, password })).error).toBeNull();
+    await client.auth.signOut();
+    const login = await client.auth.signInWithPassword({ email, password });
+    expect(login.error).toBeNull();
+    const remoteProduct = await client.from('products').insert({
+      id: randomUUID(), name: 'C2 local opening', wholesale_price: 1, selling_price: 2, user_id: login.data.user.id,
+    }).select().single();
+    expect(remoteProduct.error).toBeNull();
+    const database = createDatabase(`c2-local-${randomUUID()}`);
+    await database.open();
+    try {
+      await database.products.put(remoteProduct.data);
+      const local = await initializeStock({ userId: login.data.user.id, productId: remoteProduct.data.id, quantity: '2.125' }, database);
+      const runner = createV2SyncRunner({ client, database });
+      await runner.sync(login.data.user.id);
+      expect(await database.outbox_operations.get(local.operation.operation_id)).toMatchObject({ status: 'succeeded', reconciled_at: expect.any(String) });
+      expect(await database.inventory_balances.get(remoteProduct.data.id)).toMatchObject({ server_quantity: '2.125000', server_revision: 1 });
+      const remoteMovement = await client.from('stock_movements').select('id').eq('id', local.operation.operation_id);
+      expect(remoteMovement.data).toHaveLength(1);
+    } finally {
+      database.close();
+      await database.delete();
+      await client.auth.signOut();
+    }
   });
 
   it('creates an explicit zero opening balance and retains six-decimal quantities', async () => {
@@ -257,6 +350,19 @@ describe('local V2 inventory migration, RPC, and RLS foundation', () => {
       return rows[0].result;
     });
     expect(stale).toEqual({ status: 'conflict' });
+  });
+
+  it('updates wholesale_price as purchase cost without touching dormant cost_price or weakening ownership', async () => {
+    const productId = await createProduct(USER_A);
+    await pool.query('UPDATE public.products SET cost_price = 77 WHERE id = $1', [productId]);
+    const accepted = await asUser(USER_A, async (client) => {
+      const { rows } = await client.query("SELECT public.update_product_metadata($1, $2, $3::jsonb) AS result", [productId, 1, JSON.stringify({ wholesale_price: 12.5 })]);
+      return rows[0].result;
+    });
+    expect(accepted.product.wholesale_price).toBe(12.5);
+    expect(accepted.product.metadata_version).toBe(2);
+    expect((await pool.query('SELECT cost_price FROM public.products WHERE id = $1', [productId])).rows[0].cost_price).toBe('77.00');
+    await expect(asUser(USER_B, (client) => client.query("SELECT public.update_product_metadata($1, $2, $3::jsonb)", [productId, 2, JSON.stringify({ wholesale_price: 99 })]))).rejects.toMatchObject({ code: '42501' });
   });
 
   it('allows unchanged units after initialization but rejects actual changes', async () => {
@@ -495,5 +601,39 @@ describe('local V2 inventory migration, RPC, and RLS foundation', () => {
     expect(await balance(productA)).toEqual(before);
     const { rows } = await pool.query('SELECT count(*)::int AS count FROM public.stock_movements WHERE product_id = $1', [productA]);
     expect(rows[0].count).toBe(1);
+  });
+
+  it('posts an atomic, idempotent two-line V2 purchase with exact numeric totals', async () => {
+    const first=await createProduct(USER_A), second=await createProduct(USER_A); await postMovement(USER_A,first,'opening','1'); await postMovement(USER_A,second,'opening','1');
+    const purchaseId=randomUUID(); const lines=[{line_id:randomUUID(),product_id:first,movement_id:randomUUID(),quantity:'3',unit_cost:'0.1'},{line_id:randomUUID(),product_id:second,movement_id:randomUUID(),quantity:'2.125',unit_cost:'4.5'}];
+    const call=(input=lines)=>asUser(USER_A,async client=>(await client.query('SELECT public.post_purchase_v2($1,$2,$3,$4,$5::jsonb) AS result',[purchaseId,'2026-09-19T00:00:00Z',null,null,JSON.stringify(input)])).rows[0].result);
+    expect(await call()).toMatchObject({status:'accepted',total_amount:9.8625}); expect(await balance(first)).toMatchObject({quantity:'4.000000'});expect(await balance(second)).toMatchObject({quantity:'3.125000'});
+    const totals=await pool.query('SELECT line_total::text FROM public.v2_purchase_lines WHERE purchase_id=$1 ORDER BY line_total',[purchaseId]);expect(totals.rows.map(x=>x.line_total)).toEqual(['0.300000','9.562500']);
+    await expect(call([...lines].reverse())).resolves.toMatchObject({status:'accepted'});expect((await pool.query('SELECT count(*)::int count FROM public.v2_purchase_documents WHERE id=$1',[purchaseId])).rows[0].count).toBe(1);
+    await expect(call([{...lines[0],quantity:'4'},lines[1]])).rejects.toMatchObject({code:'P0001',message:'purchase_idempotency_conflict'});
+  });
+
+  it('rejects invalid, stock-not-set, cross-account, duplicate-product, and reused-movement purchases atomically', async () => {
+    const a=await createProduct(USER_A), b=await createProduct(USER_A), other=await createProduct(USER_B); await postMovement(USER_A,a,'opening','3');await postMovement(USER_B,other,'opening','3');
+    const line=(product,overrides={})=>({line_id:randomUUID(),product_id:product,movement_id:randomUUID(),quantity:'1',unit_cost:'1',...overrides});
+    const call=(lines)=>asUser(USER_A,c=>c.query('SELECT public.post_purchase_v2($1,$2,$3,$4,$5::jsonb)',[randomUUID(),'2026-09-19T00:00:00Z',null,null,JSON.stringify(lines)]));
+    const before=await balance(a); for(const lines of [[line(a),line(a,{quantity:'0'})],[line(a),line(b)],[line(a),line(other)],[line(a),line(a)]]) await expect(call(lines)).rejects.toBeDefined();
+    expect(await balance(a)).toEqual(before);expect(await balance(b)).toBeNull();expect(await balance(other)).toMatchObject({quantity:'3.000000'});
+    const good=line(a);await call([good]);const after=await balance(a);await expect(call([line(a,{movement_id:good.movement_id})])).rejects.toBeDefined();expect(await balance(a)).toEqual(after);
+  });
+
+  it('keeps purchase tables read-only and user-scoped, with RPC unavailable to anon', async () => {
+    const product=await createProduct(USER_A);await postMovement(USER_A,product,'opening','1');const id=randomUUID(),line={line_id:randomUUID(),product_id:product,movement_id:randomUUID(),quantity:'1',unit_cost:'1'};
+    await asUser(USER_A,c=>c.query('SELECT public.post_purchase_v2($1,$2,$3,$4,$5::jsonb)',[id,'2026-09-19T00:00:00Z',null,null,JSON.stringify([line])]));
+    expect((await asUser(USER_A,c=>c.query('SELECT id FROM public.v2_purchase_documents WHERE id=$1',[id]))).rows).toHaveLength(1);expect((await asUser(USER_B,c=>c.query('SELECT id FROM public.v2_purchase_documents WHERE id=$1',[id]))).rows).toEqual([]);
+    await expect(asUser(USER_A,c=>c.query('INSERT INTO public.v2_purchase_documents(id,user_id,purchased_at,total_amount) VALUES($1,$2,now(),0)',[randomUUID(),USER_A]))).rejects.toBeDefined();
+    await expect(asUser(USER_A,c=>c.query('UPDATE public.v2_purchase_documents SET reference=$2 WHERE id=$1',[id,'x']))).rejects.toBeDefined();await expect(asUser(USER_A,c=>c.query('DELETE FROM public.v2_purchase_documents WHERE id=$1',[id]))).rejects.toBeDefined();
+    await expect(pool.query('SET ROLE anon; SELECT public.post_purchase_v2($1,$2,$3,$4,$5::jsonb)',[randomUUID(),'2026-09-19T00:00:00Z',null,null,'[]'])).rejects.toBeDefined();
+  });
+
+  it('rejects meaningful over-precision and canonicalizes equivalent purchase retry decimals', async () => {
+    const product=await createProduct(USER_A);await postMovement(USER_A,product,'opening','1');const call=(id,line)=>asUser(USER_A,c=>c.query('SELECT public.post_purchase_v2($1,$2,$3,$4,$5::jsonb)',[id,'2026-09-19T00:00:00Z',null,null,JSON.stringify([line])]));
+    for(const line of [{line_id:randomUUID(),product_id:product,movement_id:randomUUID(),quantity:'1.0000001',unit_cost:'1'},{line_id:randomUUID(),product_id:product,movement_id:randomUUID(),quantity:'1',unit_cost:'0.1000001'}]) await expect(call(randomUUID(),line)).rejects.toMatchObject({code:'22023'});
+    expect(await balance(product)).toMatchObject({quantity:'1.000000'});const id=randomUUID(),line={line_id:randomUUID(),product_id:product,movement_id:randomUUID(),quantity:'3',unit_cost:'0.1'};await call(id,line);const after=await balance(product);await expect(call(id,{...line,quantity:'3.000000',unit_cost:'0.100000'})).resolves.toBeDefined();expect(await balance(product)).toEqual(after);
   });
 });

@@ -1,0 +1,683 @@
+diff --git a/docs/v2/03-DATA-AND-OFFLINE-FOUNDATION.md b/docs/v2/03-DATA-AND-OFFLINE-FOUNDATION.md
+index 4d383fe..4005a9a 100644
+--- a/docs/v2/03-DATA-AND-OFFLINE-FOUNDATION.md
++++ b/docs/v2/03-DATA-AND-OFFLINE-FOUNDATION.md
+@@ -291,6 +291,10 @@ Dexie version 3 adds or updates:
+ 
+ Do not clear all categories/products/balances on account switching. Every read, pull, local projection, and outbox query filters `user_id`. On login, select only that account’s browser-local, user-scoped partition. On logout, stop sync and retain that browser-local data for later session restoration; do not process or display another account’s pending operations. DokkanX currently provides no application-level encryption of IndexedDB. A future explicit “remove offline data for this account” control may purge only that account after confirmation.
+ 
++### C1 legacy queue bridge refinement
++
++Dexie V3 retains every V1 `sync_queue` row unchanged. The schema upgrade does not assign it to whichever account happens to be logged in, because upgrade can occur before reliable Auth context exists. C2 may bridge a row only after proving ownership from its payload or the matching owned local product/category record; ambiguous or unowned legacy work becomes `blocked`, never reassigned. V1 queue processing remains active until C2 deliberately replaces it.
++
+ ### 9.4 Sync algorithm
+ 
+ ```mermaid
+@@ -474,6 +478,8 @@ Minimum invariant fixtures include two users, one V1 legacy product with no bala
+ 
+ The SQL/RPC suite must additionally prove the balance-integrity invariant after every accepted opening/add/remove/count/damage/correction: canonical accepted movement sum equals the materialized balance. It must test drift detection/rebuild on a controlled fixture and prove that rebuild does not create a balance for a legacy Stock-not-set product.
+ 
++**Non-blocking pre-production hardening:** the server drift diagnostic must ultimately compare canonical movement/balance ownership against `products.user_id` as well as against each other. Current posting RPCs prevent normal creation of that corruption and rebuild fails safely, so this does not block C1/C2; it must be closed before production deployment.
++
+ CI should at least run unit tests, a local `supabase db reset` migration recreation, RLS/RPC integration suite, and production build. No cloud staging project is required for this gate.
+ 
+ ## 19. Production rollout sequence
+diff --git a/src/lib/db.js b/src/lib/db.js
+index 75606de..a187288 100755
+--- a/src/lib/db.js
++++ b/src/lib/db.js
+@@ -1,23 +1,40 @@
+ import Dexie from 'dexie';
+ 
+-export const db = new Dexie('DokkanexDB');
++export function createDatabase(name = 'DokkanexDB') {
++  const database = new Dexie(name);
+ 
+-db.version(1).stores({
++  database.version(1).stores({
+   products: 'id, name, category_id, user_id, created_at, updated_at',
+   categories: 'id, name, user_id, created_at',
+   sync_queue: '++id, table_name, operation, record_id, created_at',
+   app_meta: 'key'
+-});
++  });
+ 
+-db.version(2).stores({
++  database.version(2).stores({
+   products: 'id, name, category_id, user_id, created_at, updated_at, image_url, image_base64',
+   categories: 'id, name, user_id, created_at',
+   sync_queue: '++id, table_name, operation, record_id, created_at',
+   app_meta: 'key'
+-});
++  });
+ 
+-// Close this tab's handle when another tab triggers a DB version upgrade.
+-db.on('versionchange', () => db.close());
++  database.version(3).stores({
++    products: 'id, name, category_id, user_id, created_at, updated_at, image_url, image_base64',
++    categories: 'id, name, user_id, created_at',
++    sync_queue: '++id, table_name, operation, record_id, created_at',
++    app_meta: 'key',
++    inventory_balances: 'product_id, user_id, [user_id+product_id], [user_id+updated_at]',
++    inventory_movements: 'id, user_id, product_id, movement_type, status, server_sequence, [user_id+product_id+server_sequence], [user_id+product_id+status]',
++    outbox_operations: 'operation_id, user_id, entity_type, entity_id, status, sequence, [user_id+status+sequence], [user_id+entity_type+entity_id], [user_id+created_at]',
++    sync_state: 'id, user_id, scope, [user_id+scope]',
++    image_blobs: 'id, user_id, operation_id, product_id, [user_id+product_id]'
++  });
++
++  // Close this tab's handle when another tab triggers a DB version upgrade.
++  database.on('versionchange', () => database.close());
++  return database;
++}
++
++export const db = createDatabase();
+ 
+ // Open the DB eagerly at module load so the first real operation never races
+ // against Chrome's IndexedDB initialisation (which can throw UnknownError).
+diff --git a/src/lib/db.test.js b/src/lib/db.test.js
+index e6f8a0d..b583578 100644
+--- a/src/lib/db.test.js
++++ b/src/lib/db.test.js
+@@ -12,13 +12,18 @@ describe('current local database foundation', () => {
+     await db.delete();
+   });
+ 
+-  it('retains the current V2 Dexie schema before the future inventory upgrade', async () => {
+-    expect(db.verno).toBe(2);
++  it('retains V1 stores while exposing the V3 local inventory foundation', async () => {
++    expect(db.verno).toBe(3);
+     expect(db.tables.map((table) => table.name).sort()).toEqual([
+       'app_meta',
+       'categories',
++      'image_blobs',
++      'inventory_balances',
++      'inventory_movements',
++      'outbox_operations',
+       'products',
+       'sync_queue',
++      'sync_state',
+     ]);
+   });
+ 
+diff --git a/tests/unit/v2-inventory-foundation.test.js b/tests/unit/v2-inventory-foundation.test.js
+index f073b9b..156cacd 100644
+--- a/tests/unit/v2-inventory-foundation.test.js
++++ b/tests/unit/v2-inventory-foundation.test.js
+@@ -1,13 +1,188 @@
+-import { describe, it } from 'vitest';
+-
+-// These are deliberately skipped specifications. The V2 schema, Dexie stores,
+-// RPCs, and sync implementation do not exist in Step 3B-A and must not be
+-// simulated as passing behavior.
+-describe.skip('V2 inventory foundation (implemented in later Step 3B work)', () => {
+-  it('migrates existing Dexie v2 records to v3 without data loss');
+-  it('isolates browser-local data and pending operations by authenticated user');
+-  it('uses decimal strings without floating-point balance drift');
+-  it('distinguishes Stock not set from an explicitly initialized zero');
+-  it('permits a warned negative balance and retries an idempotent movement');
+-  it('retains an image until its replacement metadata is safely accepted');
++import Dexie from 'dexie';
++import { afterEach, describe, expect, it } from 'vitest';
++import { createDatabase } from '../../src/lib/db';
++import { addQuantities, compareQuantities, formatQuantity, normalizeQuantity, subtractQuantities } from '../../src/lib/quantity';
++import {
++  addStock, getInventoryStatus, initializeStock, recordDamageLoss, recordStockCount,
++  removeStock, replayPendingProjection,
++} from '../../src/lib/inventoryLocal';
++import {
++  cleanupSucceededOutbox, createOutboxOperation, getProjectableOutbox,
++  proveLegacyQueueOwnership, recoverAbandonedSyncing, transitionOutboxOperation,
++} from '../../src/lib/outbox';
++
++const databases = [];
++const USER_A = 'user-a';
++const USER_B = 'user-b';
++
++async function freshDatabase(label = crypto.randomUUID()) {
++  const database = createDatabase(`V3-test-${label}`);
++  databases.push(database);
++  await database.open();
++  return database;
++}
++
++async function product(database, id, userId = USER_A, threshold = null) {
++  await database.products.put({ id, user_id: userId, name: id, low_stock_threshold: threshold });
++}
++
++afterEach(async () => {
++  await Promise.all(databases.splice(0).map(async (database) => {
++    database.close();
++    await database.delete();
++  }));
++});
++
++describe('decimal quantity utility', () => {
++  it('normalizes valid six-place quantities without Number arithmetic', () => {
++    expect(normalizeQuantity(2)).toBe('2.000000');
++    expect(normalizeQuantity('2.0000000')).toBe('2.000000');
++    expect(normalizeQuantity('2.125')).toBe('2.125000');
++    expect(normalizeQuantity('0.000001')).toBe('0.000001');
++    expect(normalizeQuantity('-2.5')).toBe('-2.500000');
++    expect(addQuantities('0.1', '0.2')).toBe('0.300000');
++    expect(subtractQuantities('1', '0.875')).toBe('0.125000');
++    expect(compareQuantities('2.0', '2.000000')).toBe(0);
++    expect(formatQuantity('2.125000')).toBe('2.125');
++  });
++
++  it('rejects invalid, infinite, and meaningful over-precision input', () => {
++    for (const value of ['invalid', 'Infinity', '0.0000001', Number.NaN, Number.POSITIVE_INFINITY]) {
++      expect(() => normalizeQuantity(value)).toThrow();
++    }
++  });
++});
++
++describe('Dexie V2 to V3 upgrade', () => {
++  it('preserves legacy stores and invents no inventory state', async () => {
++    const name = `upgrade-${crypto.randomUUID()}`;
++    const v2 = new Dexie(name);
++    v2.version(2).stores({
++      products: 'id, name, category_id, user_id, created_at, updated_at, image_url, image_base64',
++      categories: 'id, name, user_id, created_at',
++      sync_queue: '++id, table_name, operation, record_id, created_at',
++      app_meta: 'key',
++    });
++    await v2.open();
++    await v2.products.put({ id: 'legacy-product', user_id: USER_A, name: 'Legacy' });
++    await v2.categories.put({ id: 'legacy-category', user_id: USER_A, name: 'Category' });
++    await v2.sync_queue.add({ table_name: 'products', operation: 'UPDATE', record_id: 'legacy-product', data: {}, created_at: 'old' });
++    await v2.app_meta.put({ key: 'last_sync', value: 'old' });
++    v2.close();
++    const upgraded = createDatabase(name);
++    databases.push(upgraded);
++    await upgraded.open();
++    expect(await upgraded.products.get('legacy-product')).toMatchObject({ user_id: USER_A });
++    expect(await upgraded.categories.get('legacy-category')).toMatchObject({ user_id: USER_A });
++    expect(await upgraded.sync_queue.count()).toBe(1);
++    expect(await upgraded.app_meta.get('last_sync')).toMatchObject({ value: 'old' });
++    expect(await upgraded.inventory_balances.count()).toBe(0);
++    expect(getInventoryStatus(null)).toBe('stock_not_set');
++    expect(upgraded.tables.map((table) => table.name)).toContain('outbox_operations');
++  });
++});
++
++describe('local V2 inventory commands and projection', () => {
++  it('creates a pending zero/decimal opening and FIFO dependencies without inventing remote state', async () => {
++    const database = await freshDatabase();
++    await product(database, 'p1');
++    const opening = await initializeStock({ userId: USER_A, productId: 'p1', quantity: '0' }, database);
++    expect(opening.balance).toMatchObject({ server_initialized: false, locally_initialized: true, current_quantity: '0.000000', projected_revision: 1 });
++    const add = await addStock({ userId: USER_A, productId: 'p1', quantity: '2.125' }, database);
++    const remove = await removeStock({ userId: USER_A, productId: 'p1', quantity: '-3' }, database);
++    expect(add.operation.depends_on).toBe(opening.operation.operation_id);
++    expect(remove.operation.depends_on).toBe(add.operation.operation_id);
++    expect(remove.balance.current_quantity).toBe('-0.875000');
++    expect(remove.would_be_negative).toBe(true);
++    const movements = await database.inventory_movements.where('product_id').equals('p1').toArray();
++    expect(movements.map((movement) => movement.id)).toContain(opening.operation.operation_id);
++  });
++
++  it('supports damage, count adjustment/no-change, and status distinctions', async () => {
++    const database = await freshDatabase();
++    await product(database, 'p2', USER_A, '2');
++    expect(getInventoryStatus(null, '2')).toBe('stock_not_set');
++    await initializeStock({ userId: USER_A, productId: 'p2', quantity: '5' }, database);
++    const damage = await recordDamageLoss({ userId: USER_A, productId: 'p2', quantity: '-4' }, database);
++    expect(getInventoryStatus(damage.balance, '2')).toBe('low_stock');
++    const noChange = await recordStockCount({ userId: USER_A, productId: 'p2', countedQuantity: '1' }, database);
++    expect(noChange.status).toBe('no_change');
++    const adjustment = await recordStockCount({ userId: USER_A, productId: 'p2', countedQuantity: '3' }, database);
++    expect(adjustment.movement).toMatchObject({ movement_type: 'stock_count', qty_change: '2.000000', base_balance: '1.000000', base_revision: 2 });
++    expect(adjustment.balance.current_quantity).toBe('3.000000');
++    await expect(recordStockCount({ userId: USER_A, productId: 'p2', countedQuantity: '-1' }, database)).rejects.toThrow();
++  });
++
++  it('replays only pending business intent deterministically', () => {
++    const projected = replayPendingProjection(
++      { server_initialized: true, server_quantity: '10', server_revision: 4 },
++      [
++        { sequence: 3, status: 'pending', movement_type: 'manual_remove', qty_change: '-2' },
++        { sequence: 2, status: 'retryable_failed', movement_type: 'manual_add', qty_change: '1' },
++        { sequence: 4, status: 'conflict', movement_type: 'manual_add', qty_change: '99' },
++        { sequence: 5, status: 'pending', movement_type: 'stock_count', counted_quantity: '7', qty_change: '-2' },
++      ],
++    );
++    expect(projected).toEqual({ initialized: true, current_quantity: '7.000000', projected_revision: 7 });
++  });
++});
++
++describe('outbox state, sequence, bridge, and isolation', () => {
++  it('allocates durable unique per-user sequences under rapid concurrent writes', async () => {
++    const database = await freshDatabase();
++    const operations = await Promise.all(Array.from({ length: 10 }, (_, index) => createOutboxOperation({
++      operation_id: `a-${index}`, user_id: USER_A, entity_type: 'inventory_movement', action: 'post', entity_id: 'p', payload: {},
++    }, database)));
++    expect(operations.map((operation) => operation.sequence).sort((a, b) => a - b)).toEqual([1,2,3,4,5,6,7,8,9,10]);
++    const other = await createOutboxOperation({ operation_id: 'b-1', user_id: USER_B, entity_type: 'inventory_movement', action: 'post', entity_id: 'p', payload: {} }, database);
++    expect(other.sequence).toBe(1);
++  });
++
++  it('keeps user partitions and legacy queue ownership boundaries separate', async () => {
++    const database = await freshDatabase();
++    await product(database, 'a-product', USER_A);
++    await product(database, 'b-product', USER_B);
++    await initializeStock({ userId: USER_A, productId: 'a-product', quantity: '1' }, database);
++    await initializeStock({ userId: USER_B, productId: 'b-product', quantity: '2' }, database);
++    expect(await database.inventory_balances.where('user_id').equals(USER_A).count()).toBe(1);
++    expect(await database.inventory_movements.where('user_id').equals(USER_B).count()).toBe(1);
++    expect((await getProjectableOutbox(USER_A, 'a-product', database)).every((operation) => operation.user_id === USER_A)).toBe(true);
++    expect((await getProjectableOutbox(USER_A, 'b-product', database))).toEqual([]);
++    await database.sync_queue.add({ table_name: 'products', operation: 'UPDATE', record_id: 'a-product', data: {}, created_at: 'old' });
++    const legacy = await database.sync_queue.toCollection().first();
++    expect(await proveLegacyQueueOwnership(legacy, USER_A, database)).toMatchObject({ proven: true });
++    expect(await proveLegacyQueueOwnership({ table_name: 'products', record_id: 'missing', data: {} }, USER_A, database)).toMatchObject({ proven: false });
++    expect(await database.inventory_balances.where('user_id').equals(USER_B).count()).toBe(1);
++  });
++
++  it('manages outbox transitions, recovery, projection eligibility, and retention safely', async () => {
++    const database = await freshDatabase();
++    const first = await createOutboxOperation({ operation_id: 'one', user_id: USER_A, entity_type: 'inventory_movement', action: 'post', entity_id: 'p', payload: {} }, database);
++    await transitionOutboxOperation(first.operation_id, 'syncing', {}, database);
++    await transitionOutboxOperation(first.operation_id, 'retryable_failed', { last_error_code: 'offline' }, database);
++    expect((await getProjectableOutbox(USER_A, 'p', database)).map((row) => row.operation_id)).toEqual(['one']);
++    await transitionOutboxOperation(first.operation_id, 'conflict', {}, database);
++    expect(await getProjectableOutbox(USER_A, 'p', database)).toEqual([]);
++    await expect(transitionOutboxOperation(first.operation_id, 'pending', {}, database)).rejects.toThrow();
++    const blocked = await createOutboxOperation({ operation_id: 'blocked', user_id: USER_A, entity_type: 'inventory_movement', action: 'post', entity_id: 'p', payload: {}, depends_on: 'missing' }, database);
++    await transitionOutboxOperation(blocked.operation_id, 'blocked', {}, database);
++    expect((await database.outbox_operations.get(blocked.operation_id)).status).toBe('blocked');
++    const permanent = await createOutboxOperation({ operation_id: 'permanent', user_id: USER_A, entity_type: 'inventory_movement', action: 'post', entity_id: 'p', payload: {} }, database);
++    await transitionOutboxOperation(permanent.operation_id, 'syncing', {}, database);
++    await transitionOutboxOperation(permanent.operation_id, 'permanent_failed', {}, database);
++    await expect(transitionOutboxOperation(permanent.operation_id, 'pending', {}, database)).rejects.toThrow();
++    const abandoned = await createOutboxOperation({ operation_id: 'two', user_id: USER_A, entity_type: 'inventory_movement', action: 'post', entity_id: 'p', payload: {} }, database);
++    await transitionOutboxOperation(abandoned.operation_id, 'syncing', {}, database);
++    const durable = await createOutboxOperation({ operation_id: 'three', user_id: USER_A, entity_type: 'inventory_movement', action: 'post', entity_id: 'p', payload: {} }, database);
++    await transitionOutboxOperation(durable.operation_id, 'syncing', { server_receipt: { status: 'accepted' } }, database);
++    expect(await recoverAbandonedSyncing(USER_A, database)).toBe(1);
++    expect((await database.outbox_operations.get(abandoned.operation_id)).status).toBe('pending');
++    expect((await database.outbox_operations.get(durable.operation_id)).status).toBe('syncing');
++    for (const id of ['old-1', 'old-2']) {
++      const op = await createOutboxOperation({ operation_id: id, user_id: USER_A, entity_type: 'inventory_movement', action: 'post', entity_id: 'p', payload: {} }, database);
++      await transitionOutboxOperation(op.operation_id, 'syncing', {}, database);
++      await transitionOutboxOperation(op.operation_id, 'succeeded', { server_receipt: { ok: true }, reconciled_at: new Date().toISOString() }, database);
++    }
++    expect(await cleanupSucceededOutbox(USER_A, { keepRecent: 1 }, database)).toBe(1);
++  });
+ });
+diff --git a/src/lib/quantity.js b/src/lib/quantity.js
+new file mode 100644
+index 0000000..eca932c
+--- /dev/null
++++ b/src/lib/quantity.js
+@@ -0,0 +1,53 @@
++import Decimal from 'decimal.js-light';
++
++const SCALE = 6;
++const QUANTITY_PATTERN = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/;
++
++function sourceText(value) {
++  if (value instanceof Decimal) return value.toFixed(SCALE);
++  if (typeof value === 'number') {
++    if (!Number.isFinite(value)) throw new Error('Quantity must be finite');
++    return String(value);
++  }
++  if (typeof value !== 'string') throw new Error('Quantity must be a number or string');
++  const text = value.trim();
++  if (!QUANTITY_PATTERN.test(text)) throw new Error('Quantity is not a valid decimal');
++  return text;
++}
++
++export function toDecimal(value) {
++  const text = sourceText(value);
++  const decimal = new Decimal(text);
++  return decimal;
++}
++
++export function normalizeQuantity(value) {
++  const text = sourceText(value);
++  const decimal = new Decimal(text);
++  if (decimal.decimalPlaces() > SCALE) {
++    // Extra trailing zeroes are mathematically equivalent and safe to accept.
++    const rounded = decimal.toDecimalPlaces(SCALE);
++    if (!decimal.equals(rounded)) throw new Error('Quantity supports at most six decimal places');
++  }
++  return decimal.toFixed(SCALE);
++}
++
++export function addQuantities(left, right) {
++  return normalizeQuantity(toDecimal(left).plus(toDecimal(right)));
++}
++
++export function subtractQuantities(left, right) {
++  return normalizeQuantity(toDecimal(left).minus(toDecimal(right)));
++}
++
++export function compareQuantities(left, right) {
++  return toDecimal(left).comparedTo(toDecimal(right));
++}
++
++export function formatQuantity(value) {
++  const normalized = normalizeQuantity(value);
++  const trimmed = normalized.replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
++  return trimmed === '-0' ? '0' : trimmed;
++}
++
++export const QUANTITY_SCALE = SCALE;
+diff --git a/src/lib/outbox.js b/src/lib/outbox.js
+new file mode 100644
+index 0000000..33ce1ad
+--- /dev/null
++++ b/src/lib/outbox.js
+@@ -0,0 +1,98 @@
++import { db as defaultDb } from './db';
++
++export const OUTBOX_STATUSES = new Set([
++  'pending', 'syncing', 'succeeded', 'retryable_failed', 'conflict', 'blocked', 'permanent_failed'
++]);
++
++const PROJECTED_STATUSES = new Set(['pending', 'syncing', 'retryable_failed']);
++
++const stateId = (userId) => `outbox_sequence:${userId}`;
++
++export async function createOutboxOperation(input, database = defaultDb) {
++  if (!input.operation_id || !input.user_id || !input.entity_type || !input.entity_id || !input.action) {
++    throw new Error('Outbox operation requires operation_id, user_id, entity_type, entity_id, and action');
++  }
++  const now = new Date().toISOString();
++  return database.transaction('rw', database.outbox_operations, database.sync_state, async () => {
++    const id = stateId(input.user_id);
++    const state = await database.sync_state.get(id);
++    const sequence = (state?.next_sequence ?? 0) + 1;
++    const operation = {
++      ...input,
++      sequence,
++      status: 'pending',
++      depends_on: input.depends_on ?? null,
++      created_at: now,
++      updated_at: now,
++      attempt_count: 0,
++      last_attempt_at: null,
++      last_error_code: null,
++      last_error_message: null,
++      server_receipt: null,
++      reconciled_at: null,
++    };
++    await database.outbox_operations.add(operation);
++    await database.sync_state.put({
++      id,
++      user_id: input.user_id,
++      scope: 'outbox_sequence',
++      next_sequence: sequence,
++      updated_at: now,
++    });
++    return operation;
++  });
++}
++
++export async function transitionOutboxOperation(operationId, status, patch = {}, database = defaultDb) {
++  if (!OUTBOX_STATUSES.has(status)) throw new Error('Invalid outbox status');
++  const operation = await database.outbox_operations.get(operationId);
++  if (!operation) throw new Error('Outbox operation not found');
++  if (['conflict', 'permanent_failed'].includes(operation.status) && status === 'pending') {
++    throw new Error('Terminal outbox states cannot be reset automatically');
++  }
++  const now = new Date().toISOString();
++  const update = { status, updated_at: now, ...patch };
++  if (status === 'syncing') {
++    update.attempt_count = operation.attempt_count + 1;
++    update.last_attempt_at = now;
++  }
++  await database.outbox_operations.update(operationId, update);
++  return database.outbox_operations.get(operationId);
++}
++
++export async function recoverAbandonedSyncing(userId, database = defaultDb) {
++  const syncing = await database.outbox_operations.where('[user_id+status+sequence]').between([userId, 'syncing', -Infinity], [userId, 'syncing', Infinity]).toArray();
++  const recoverable = syncing.filter((operation) => !operation.server_receipt);
++  await database.transaction('rw', database.outbox_operations, async () => {
++    for (const operation of recoverable) {
++      await database.outbox_operations.update(operation.operation_id, { status: 'pending', updated_at: new Date().toISOString() });
++    }
++  });
++  return recoverable.length;
++}
++
++export async function getProjectableOutbox(userId, productId, database = defaultDb) {
++  const rows = await database.outbox_operations.where('[user_id+entity_type+entity_id]').equals([userId, 'inventory_movement', productId]).toArray();
++  return rows.filter((row) => PROJECTED_STATUSES.has(row.status)).sort((a, b) => a.sequence - b.sequence);
++}
++
++export async function cleanupSucceededOutbox(userId, { keepRecent = 50 } = {}, database = defaultDb) {
++  const rows = await database.outbox_operations.where('[user_id+status+sequence]').between([userId, 'succeeded', -Infinity], [userId, 'succeeded', Infinity]).toArray();
++  const eligible = rows.filter((row) => row.server_receipt && row.reconciled_at).sort((a, b) => b.sequence - a.sequence);
++  const remove = eligible.slice(keepRecent);
++  await database.outbox_operations.bulkDelete(remove.map((row) => row.operation_id));
++  return remove.length;
++}
++
++// C2 bridge boundary: this proves ownership but intentionally does not move or
++// process any legacy queue row. Ambiguous records remain untouched/blocked.
++export async function proveLegacyQueueOwnership(row, userId, database = defaultDb) {
++  const payloadUser = row?.data?.user_id;
++  if (payloadUser) return { proven: payloadUser === userId, reason: 'payload_user_id' };
++  if (!row?.record_id || !['products', 'categories'].includes(row.table_name)) {
++    return { proven: false, reason: 'ambiguous' };
++  }
++  const table = row.table_name === 'products' ? database.products : database.categories;
++  const entity = await table.get(row.record_id);
++  return { proven: entity?.user_id === userId, reason: entity?.user_id ? 'local_entity' : 'ambiguous' };
++}
+diff --git a/src/lib/inventoryLocal.js b/src/lib/inventoryLocal.js
+new file mode 100644
+index 0000000..096faee
+--- /dev/null
++++ b/src/lib/inventoryLocal.js
+@@ -0,0 +1,157 @@
++import { db as defaultDb } from './db';
++import { addQuantities, compareQuantities, normalizeQuantity, subtractQuantities } from './quantity';
++import { createOutboxOperation, getProjectableOutbox } from './outbox';
++import { v4 as uuidv4 } from 'uuid';
++
++const PROJECTABLE = new Set(['pending', 'syncing', 'retryable_failed']);
++
++async function ownedProduct(userId, productId, database) {
++  const product = await database.products.get(productId);
++  if (!product || product.user_id !== userId) throw new Error('Product does not belong to this user');
++  return product;
++}
++
++function statusFor(balance, threshold) {
++  if (!balance?.locally_initialized && !balance?.server_initialized) return 'stock_not_set';
++  if (compareQuantities(balance.current_quantity, '0') <= 0) return 'out_of_stock';
++  if (threshold !== null && threshold !== undefined && compareQuantities(balance.current_quantity, threshold) <= 0) return 'low_stock';
++  return 'in_stock';
++}
++
++export function getInventoryStatus(balance, threshold = null) {
++  return statusFor(balance, threshold);
++}
++
++export function replayPendingProjection(canonical, pendingMovements) {
++  let initialized = Boolean(canonical?.server_initialized);
++  let quantity = initialized ? normalizeQuantity(canonical.server_quantity) : null;
++  let revision = canonical?.server_revision ?? 0;
++  for (const movement of [...pendingMovements].sort((a, b) => a.sequence - b.sequence)) {
++    if (!PROJECTABLE.has(movement.status)) continue;
++    if (movement.movement_type === 'opening') {
++      if (initialized) throw new Error('Opening cannot replay over initialized stock');
++      initialized = true;
++      quantity = normalizeQuantity(movement.qty_change);
++      revision += 1;
++    } else if (!initialized) {
++      throw new Error('Inventory movement depends on opening stock');
++    } else if (movement.movement_type === 'stock_count') {
++      quantity = normalizeQuantity(movement.counted_quantity);
++      revision += 1;
++    } else {
++      quantity = addQuantities(quantity, movement.qty_change);
++      revision += 1;
++    }
++  }
++  return { initialized, current_quantity: quantity, projected_revision: revision };
++}
++
++async function latestDependency(userId, productId, database) {
++  const rows = await getProjectableOutbox(userId, productId, database);
++  return rows.at(-1)?.operation_id ?? null;
++}
++
++async function writeMovement({ userId, productId, movementType, qtyChange, baseBalance = null, baseRevision = null, countedQuantity = null }, database) {
++  const id = uuidv4();
++  const dependency = await latestDependency(userId, productId, database);
++  const movement = {
++    id,
++    user_id: userId,
++    product_id: productId,
++    movement_type: movementType,
++    qty_change: normalizeQuantity(qtyChange),
++    client_created_at: new Date().toISOString(),
++    posted_at: null,
++    server_sequence: null,
++    base_balance: baseBalance === null ? null : normalizeQuantity(baseBalance),
++    base_revision: baseRevision,
++    counted_quantity: countedQuantity === null ? null : normalizeQuantity(countedQuantity),
++    status: 'pending',
++  };
++  const operation = await createOutboxOperation({
++    operation_id: id,
++    user_id: userId,
++    entity_type: 'inventory_movement',
++    action: movementType === 'stock_count' ? 'stock_count' : 'post',
++    entity_id: productId,
++    payload: movement,
++    depends_on: dependency,
++  }, database);
++  movement.sequence = operation.sequence;
++  await database.inventory_movements.add(movement);
++  return { movement, operation };
++}
++
++async function balanceFor(userId, productId, database) {
++  const balance = await database.inventory_balances.get(productId);
++  if (balance && balance.user_id !== userId) throw new Error('Balance does not belong to this user');
++  return balance ?? null;
++}
++
++export async function initializeStock({ userId, productId, quantity }, database = defaultDb) {
++  const normalized = normalizeQuantity(quantity);
++  if (compareQuantities(normalized, '0') < 0) throw new Error('Opening quantity cannot be negative');
++  return database.transaction('rw', database.products, database.inventory_balances, database.inventory_movements, database.outbox_operations, database.sync_state, async () => {
++    await ownedProduct(userId, productId, database);
++    if (await balanceFor(userId, productId, database)) throw new Error('Stock is already initialized');
++    const { movement, operation } = await writeMovement({ userId, productId, movementType: 'opening', qtyChange: normalized }, database);
++    const now = new Date().toISOString();
++    const balance = {
++      product_id: productId, user_id: userId,
++      server_quantity: null, server_revision: 0, server_initialized: false,
++      current_quantity: normalized, projected_revision: 1, locally_initialized: true,
++      initialized_at: now, last_movement_id: movement.id, updated_at: now, pending_count: 1,
++    };
++    await database.inventory_balances.add(balance);
++    return { movement, operation, balance };
++  });
++}
++
++async function adjustStock({ userId, productId, quantity, movementType }, database) {
++  const normalized = normalizeQuantity(quantity);
++  if (movementType === 'manual_add' && compareQuantities(normalized, '0') <= 0) throw new Error('Add quantity must be positive');
++  if (['manual_remove', 'damage_loss'].includes(movementType) && compareQuantities(normalized, '0') >= 0) throw new Error('Removal quantity must be negative');
++  return database.transaction('rw', database.products, database.inventory_balances, database.inventory_movements, database.outbox_operations, database.sync_state, async () => {
++    await ownedProduct(userId, productId, database);
++    const balance = await balanceFor(userId, productId, database);
++    if (!balance?.locally_initialized && !balance?.server_initialized) throw new Error('Stock must be initialized first');
++    const { movement, operation } = await writeMovement({ userId, productId, movementType, qtyChange: normalized }, database);
++    const updated = {
++      ...balance,
++      current_quantity: addQuantities(balance.current_quantity, normalized),
++      projected_revision: balance.projected_revision + 1,
++      last_movement_id: movement.id,
++      updated_at: new Date().toISOString(),
++      pending_count: balance.pending_count + 1,
++    };
++    await database.inventory_balances.put(updated);
++    return { movement, operation, balance: updated, would_be_negative: compareQuantities(updated.current_quantity, '0') < 0 };
++  });
++}
++
++export const addStock = (input, database = defaultDb) => adjustStock({ ...input, movementType: 'manual_add' }, database);
++export const removeStock = (input, database = defaultDb) => adjustStock({ ...input, movementType: 'manual_remove' }, database);
++export const recordDamageLoss = (input, database = defaultDb) => adjustStock({ ...input, movementType: 'damage_loss' }, database);
++
++export async function recordStockCount({ userId, productId, countedQuantity }, database = defaultDb) {
++  const counted = normalizeQuantity(countedQuantity);
++  if (compareQuantities(counted, '0') < 0) throw new Error('Physical count cannot be negative');
++  return database.transaction('rw', database.products, database.inventory_balances, database.inventory_movements, database.outbox_operations, database.sync_state, async () => {
++    await ownedProduct(userId, productId, database);
++    const balance = await balanceFor(userId, productId, database);
++    if (!balance?.locally_initialized && !balance?.server_initialized) throw new Error('Stock must be initialized first');
++    if (compareQuantities(counted, balance.current_quantity) === 0) return { status: 'no_change', balance };
++    const { movement, operation } = await writeMovement({
++      userId, productId, movementType: 'stock_count',
++      qtyChange: subtractQuantities(counted, balance.current_quantity),
++      baseBalance: balance.current_quantity, baseRevision: balance.projected_revision,
++      countedQuantity: counted,
++    }, database);
++    const updated = {
++      ...balance, current_quantity: counted, projected_revision: balance.projected_revision + 1,
++      last_movement_id: movement.id, updated_at: new Date().toISOString(), pending_count: balance.pending_count + 1,
++    };
++    await database.inventory_balances.put(updated);
++    return { status: 'pending', movement, operation, balance: updated };
++  });
++}
+diff --git a/docs/v2/03B-C1-LOCAL-DATA-IMPLEMENTATION.md b/docs/v2/03B-C1-LOCAL-DATA-IMPLEMENTATION.md
+new file mode 100644
+index 0000000..f3bd1ef
+--- /dev/null
++++ b/docs/v2/03B-C1-LOCAL-DATA-IMPLEMENTATION.md
+@@ -0,0 +1,45 @@
++# DokkanX V2 — Step 3B-C1 Local Data Implementation
++
++**Status:** Local-only foundation. No remote V2 sync, UI integration, or production change is included.
++
++## Dexie V3 schema
++
++`src/lib/db.js` retains V1/V2 declarations and adds version 3 without an upgrade callback that rewrites old records. Existing `products`, `categories`, `sync_queue`, and `app_meta` records remain intact. New stores are user-scoped:
++
++| Store | Key/index intent |
++|---|---|
++| `inventory_balances` | `product_id`; `user_id`, user/product and user/update indexes |
++| `inventory_movements` | movement UUID; user/product/status and user/product/server-sequence indexes |
++| `outbox_operations` | operation UUID; user/status/sequence, user/entity, and user/created indexes |
++| `sync_state` | durable per-user scope records, including the outbox counter |
++| `image_blobs` | reserved user-scoped staged-image storage; no current UI writer |
++
++No old record is cleared or given an invented `user_id`. A legacy product with no V3 balance remains **Stock not set**.
++
++## Local balance and movement model
++
++Balances explicitly separate canonical remote fields (`server_quantity`, `server_revision`, `server_initialized`) from the local projection (`current_quantity`, `projected_revision`, `locally_initialized`, `pending_count`). A pending opening makes the local product initialized immediately without claiming remote acceptance.
++
++`inventory_movements` uses the same UUID as its outbox operation. Pending and accepted movement data are separate states of the same business operation; C1 never mutates a pending movement into a different operation.
++
++`src/lib/quantity.js` uses `decimal.js-light`, stores/transmits six-place canonical strings, rejects meaningful precision beyond six places, and avoids JavaScript Number arithmetic for inventory calculation.
++
++## Outbox, sequence, and legacy bridge
++
++`outbox_operations` stores user ownership, entity/action/payload, dependency, durable per-user sequence, status, attempts/errors, receipt, and reconciliation marker. The next sequence lives in `sync_state` and is allocated in the same Dexie transaction as the outbox row. Sequence is per user and survives reload.
++
++Inventory commands chain later operations to the latest pending inventory operation for that product. They never coalesce movements. Retryable failures remain projected; conflict, blocked, permanent failure, and reconciled success are excluded.
++
++The old `sync_queue` is retained unchanged. `proveLegacyQueueOwnership()` only proves a future bridge candidate from explicit payload/local entity ownership; it does not migrate, assign, or process legacy work. C2 must mark ambiguous work blocked.
++
++## Local commands and projection
++
++`initializeStock`, `addStock`, `removeStock`, `recordDamageLoss`, and `recordStockCount` require explicit `userId` and `productId`, verify locally owned products, write balance/movement/outbox state atomically, and allow negative projected stock for removal/damage. Counts capture projected base quantity/revision and create no row for equal count (`no_change`).
++
++`replayPendingProjection()` replays pending, syncing, and retryable-failed movement intent in sequence over a remote base. It handles opening, signed manual movements, and stock-count targets. It does not simulate RPC success or send network requests.
++
++## Test coverage and C2 handoff
++
++Unit coverage uses fake IndexedDB for V2→V3 preservation, no invented stock, user partitions, concurrent per-user sequences, Decimal operations, commands, dependency chains, stock-count behavior, projection rules, legacy queue boundary, status recovery, and retention. Local Supabase integration tests remain the separate remote-contract suite.
++
++C2 must implement only remote reconciliation/sync: user-scoped pull cursors, V2 RPC posting with stable UUID retries, legacy queue bridge decisions, accepted movement/balance merge, outbox reconciliation/cleanup, image sequencing, and metadata retry reconciliation. It must not process another account’s partition or treat local projected revision as an accepted server revision.

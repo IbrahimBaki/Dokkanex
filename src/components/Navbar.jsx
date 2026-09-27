@@ -49,6 +49,14 @@ export default function Navbar() {
             {t('nav.products')}
           </NavLink>
           <NavLink
+            to="/inventory"
+            className={({ isActive }) =>
+              `px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${isActive ? 'bg-indigo-50 text-indigo-600' : 'text-slate-600 hover:bg-slate-100'}`
+            }
+          >
+            {t('nav.inventory')}
+          </NavLink>
+          <NavLink
             to="/dashboard"
             className={({ isActive }) =>
               `px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${

@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { timeAgo } from '../lib/timeAgo'
+import { formatQuantityForUnit } from '../lib/quantity'
+import { getInventoryStatus, isInventoryInitialized } from '../lib/inventoryLocal'
 
 const PLACEHOLDER_BG = [
   'from-indigo-400 to-violet-500',
@@ -57,7 +59,16 @@ function DotsMenuIcon() {
   )
 }
 
-export default function ProductCard({ product, categoryName, categoryId, onEdit, onDelete, view = 'grid', selectionMode = false, selected = false, onToggleSelect }) {
+const statusStyle = { in_stock: 'bg-emerald-50 text-emerald-700', low_stock: 'bg-amber-50 text-amber-700', out_of_stock: 'bg-red-50 text-red-700', stock_not_set: 'bg-slate-100 text-slate-600' }
+
+function StockSummary({ product, balance, t }) {
+  const status = getInventoryStatus(balance, product.low_stock_threshold ?? null)
+  const unit = product.unit || 'piece'
+  if (!isInventoryInitialized(balance)) return <p className="text-xs text-slate-500">{t('productCard.stockNotSet')}</p>
+  return <div className="flex items-center justify-between gap-2 text-xs"><span className="text-slate-600">{t('productCard.currentStock', { quantity: formatQuantityForUnit(balance.current_quantity, unit), unit: t(`productForm.units.${unit}`) })}</span><span className={`shrink-0 rounded-full px-1.5 py-0.5 font-medium ${statusStyle[status]}`}>{t(`productCard.status.${status}`)}</span></div>
+}
+
+export default function ProductCard({ product, categoryName, categoryId, balance, onInitialize, onEdit, onDelete, view = 'grid', selectionMode = false, selected = false, onToggleSelect }) {
   const { t, i18n } = useTranslation()
   const [imgError, setImgError] = useState(false)
   const imageSrc = product.image_base64 || product.image_url || null
@@ -127,6 +138,7 @@ export default function ProductCard({ product, categoryName, categoryId, onEdit,
             <p className="text-[10px] text-slate-400 leading-none mt-0.5">
               {t('productCard.lastEdited')} {timeAgo(product.updated_at || product.created_at, i18n.language)}
             </p>
+            <StockSummary product={product} balance={balance} t={t} />
           </div>
 
           {!selectionMode && (
@@ -153,6 +165,7 @@ export default function ProductCard({ product, categoryName, categoryId, onEdit,
                     </svg>
                     {t('productCard.details')}
                   </button>
+                  {!isInventoryInitialized(balance) && <button onClick={e => { e.stopPropagation(); setShowMenu(false); onInitialize(product) }} className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-emerald-700 hover:bg-emerald-50 transition-colors">{t('productCard.initializeStock')}</button>}
                   <button
                     onClick={e => { e.stopPropagation(); setShowMenu(false); onEdit(product) }}
                     className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-indigo-700 hover:bg-indigo-50 transition-colors"
@@ -225,8 +238,10 @@ export default function ProductCard({ product, categoryName, categoryId, onEdit,
                     <p className="text-xl font-bold text-emerald-700">{product.selling_price}</p>
                   </div>
                 </div>
+                <div className="mb-4"><StockSummary product={product} balance={balance} t={t} /></div>
 
                 <div className="flex gap-2">
+                  {!isInventoryInitialized(balance) && <button onClick={() => { setShowDetail(false); onInitialize(product) }} className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors">{t('productCard.initializeStock')}</button>}
                   <button
                     onClick={() => { setShowDetail(false); onEdit(product) }}
                     className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 transition-colors"
@@ -300,6 +315,7 @@ export default function ProductCard({ product, categoryName, categoryId, onEdit,
             <div className="font-bold text-emerald-700 text-sm">{product.selling_price}</div>
           </div>
         </div>
+        <StockSummary product={product} balance={balance} t={t} />
 
         <p className="text-[10px] text-slate-400 leading-none">
           {t('productCard.lastEdited')} {timeAgo(product.updated_at || product.created_at, i18n.language)}
@@ -307,6 +323,7 @@ export default function ProductCard({ product, categoryName, categoryId, onEdit,
 
         {!selectionMode && (
           <div className="flex gap-2 pt-1">
+            {!isInventoryInitialized(balance) && <button onClick={() => onInitialize(product)} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors">{t('productCard.initializeStock')}</button>}
             <button
               onClick={() => onEdit(product)}
               className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors"

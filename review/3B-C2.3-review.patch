@@ -1,0 +1,93 @@
+diff --git a/src/lib/v2Sync.js b/src/lib/v2Sync.js
+index 34a07b8..96965df 100644
+--- a/src/lib/v2Sync.js
++++ b/src/lib/v2Sync.js
+@@ -145,16 +145,19 @@ async function pushCategory(client, operation) {
+   return client.from('categories').delete().eq('id', operation.entity_id).select();
+ }
+ 
+-async function reconcileDuplicateCategoryCreate(userId, operation, client, database) {
++async function reconcileDuplicateCategoryCreate(userId, operation, client, database, isCurrent) {
+   const remote = await client.from('categories').select('*').eq('id', operation.entity_id).single();
+-  if (remote.error || !remote.data || remote.data.user_id !== userId) return false;
++  if (!await isCurrent()) return { cancelled: true };
++  if (remote.error) return { lookup_error: remote.error };
++  if (!remote.data) return { unresolved: true };
++  if (remote.data.user_id !== userId) return { ownership_mismatch: true };
+   await database.transaction('rw', database.categories, database.outbox_operations, async () => {
+     await database.categories.put({ ...remote.data, user_id: userId });
+     await database.outbox_operations.update(operation.operation_id, {
+       status: 'succeeded', server_receipt: { status: 'accepted', category: remote.data, recovered_duplicate: true }, reconciled_at: nowIso(), updated_at: nowIso(),
+     });
+   });
+-  return true;
++  return { reconciled: true };
+ }
+ 
+ async function pushOperation(userId, operation, { client, database, isCurrent }) {
+@@ -217,7 +220,16 @@ async function pushOperation(userId, operation, { client, database, isCurrent })
+     }
+     if (operation.entity_type === 'category' && operation.action === 'create' && error?.code === '23505') {
+       if (!await isCurrent()) return { cancelled: true };
+-      if (await reconcileDuplicateCategoryCreate(userId, operation, client, database)) return { pushed: true, recovered_duplicate: true };
++      const recovered = await reconcileDuplicateCategoryCreate(userId, operation, client, database, isCurrent);
++      if (recovered.cancelled) return { cancelled: true };
++      if (recovered.reconciled) return { pushed: true, recovered_duplicate: true };
++      if (recovered.lookup_error) throw recovered.lookup_error;
++      if (recovered.ownership_mismatch) {
++        await transitionOutboxOperation(operation.operation_id, 'permanent_failed', { last_error_code: 'category_duplicate_ownership_mismatch', last_error_message: 'Duplicate category is not owned by this account' }, database);
++        return { failed: true };
++      }
++      await transitionOutboxOperation(operation.operation_id, 'conflict', { last_error_code: 'category_duplicate_unresolved', last_error_message: 'Duplicate category could not be reconciled' }, database);
++      return { conflict: true };
+     }
+     const classification = classifySyncError(error);
+     const failed = await transitionOutboxOperation(operation.operation_id, classification.state, { last_error_code: classification.code, last_error_message: safeMessage(error) }, database);
+diff --git a/tests/unit/v2-sync.test.js b/tests/unit/v2-sync.test.js
+index 58e333a..3729a3e 100644
+--- a/tests/unit/v2-sync.test.js
++++ b/tests/unit/v2-sync.test.js
+@@ -197,6 +197,42 @@ describe('V2 remote sync runner', () => {
+     expect(await database.categories.get('c')).toMatchObject(category);
+   });
+ 
++  it('makes an unresolved duplicate category create a finite conflict', async () => {
++    const database = await freshDatabase();
++    const operation = await createOutboxOperation({ operation_id: 'category-unresolved', user_id: USER_A, entity_type: 'category', action: 'create', entity_id: 'c', payload: { id: 'c', user_id: USER_A, name: 'Tools' } }, database);
++    const client = mockClient();
++    client.from = (table) => table === 'categories'
++      ? { insert: () => ({ select: () => ({ single: async () => ({ data: null, error: { code: '23505', message: 'duplicate key' } }) }) }), select: () => query([]) }
++      : { select: () => query([]) };
++    await createV2SyncRunner({ client, database }).sync(USER_A);
++    expect(await database.outbox_operations.get(operation.operation_id)).toMatchObject({ status: 'conflict', last_error_code: 'category_duplicate_unresolved' });
++  });
++
++  it('does not reconcile duplicate category recovery after account invalidation during canonical fetch', async () => {
++    const database = await freshDatabase();
++    const category = { id: 'c', user_id: USER_A, name: 'Tools' };
++    const operation = await createOutboxOperation({ operation_id: 'category-stale', user_id: USER_A, entity_type: 'category', action: 'create', entity_id: 'c', payload: category }, database);
++    let resolveFetch;
++    let fetchStarted;
++    const started = new Promise((resolve) => { fetchStarted = resolve; });
++    const delayedFetch = new Promise((resolve) => { resolveFetch = resolve; });
++    const client = mockClient();
++    client.from = (table) => table === 'categories'
++      ? {
++          insert: () => ({ select: () => ({ single: async () => ({ data: null, error: { code: '23505', message: 'duplicate key' } }) }) }),
++          select: () => ({ eq: () => ({ single: async () => { fetchStarted(); return delayedFetch; } }) }),
++        }
++      : { select: () => query([]) };
++    const runner = createV2SyncRunner({ client, database });
++    const run = runner.sync(USER_A);
++    await started;
++    runner.invalidate();
++    resolveFetch({ data: category, error: null });
++    expect(await run).toMatchObject({ cancelled: true });
++    expect(await database.categories.get('c')).toBeUndefined();
++    expect(await database.outbox_operations.get(operation.operation_id)).toMatchObject({ status: 'syncing', reconciled_at: null });
++  });
++
+   it('does not advance the movement cursor when canonical merge fails', async () => {
+     const database = await freshDatabase();
+     const remoteMovement = { id: 'm', user_id: USER_A, product_id: 'p', movement_type: 'opening', qty_change: '1', server_sequence: 3 };
+

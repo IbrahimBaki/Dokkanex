@@ -2,13 +2,14 @@ import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../context/AuthContext'
 import { useSync } from '../context/SyncContext'
-import { getCategories, addCategory, updateCategory, deleteCategory } from '../lib/offlineOps'
+import { getCategories } from '../lib/offlineOps'
+import { createCategory, updateCategory, deleteCategory } from '../lib/catalogV2'
 import ConfirmDialog from '../components/ConfirmDialog'
 
 export default function CategoriesPage() {
   const { t } = useTranslation()
   const { user } = useAuth()
-  const { syncVersion, refreshMeta } = useSync()
+  const { syncVersion, refreshMeta, handleSync } = useSync()
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -43,10 +44,11 @@ export default function CategoriesPage() {
     setAdding(true)
     setError('')
     try {
-      const record = await addCategory({ name })
+      const { category: record } = await createCategory({ userId: user.id, name })
       setCategories(prev => [...prev, record].sort((a, b) => a.name.localeCompare(b.name)))
       setNewName('')
       refreshMeta()
+      if (navigator.onLine) handleSync()
     } catch (e) {
       setError(t('categories.errors.failedToAdd', { error: e.message }))
     } finally {
@@ -59,10 +61,11 @@ export default function CategoriesPage() {
     if (!name || name === cat.name) return cancelEdit()
     setSaving(true)
     try {
-      const record = await updateCategory(cat.id, { name })
-      setCategories(prev => prev.map(c => c.id === cat.id ? record : c).sort((a, b) => a.name.localeCompare(b.name)))
+      await updateCategory({ userId: user.id, categoryId: cat.id, patch: { name } })
+      setCategories(prev => prev.map(c => c.id === cat.id ? { ...c, name } : c).sort((a, b) => a.name.localeCompare(b.name)))
       cancelEdit()
       refreshMeta()
+      if (navigator.onLine) handleSync()
     } catch (e) {
       setError(t('categories.errors.failedToEdit', { error: e.message }))
     } finally {
@@ -84,10 +87,11 @@ export default function CategoriesPage() {
     if (!toDelete) return
     setDeleting(true)
     try {
-      await deleteCategory(toDelete.id)
+      await deleteCategory({ userId: user.id, categoryId: toDelete.id })
       setCategories(prev => prev.filter(c => c.id !== toDelete.id))
       setToDelete(null)
       refreshMeta()
+      if (navigator.onLine) handleSync()
     } catch (e) {
       setError(t('categories.errors.failedToDelete', { error: e.message }))
     } finally {

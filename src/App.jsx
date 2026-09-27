@@ -5,8 +5,6 @@ import { SyncProvider } from './context/SyncContext'
 import PrivateLayout from './components/PrivateLayout'
 import PublicRoute from './components/PublicRoute'
 import OfflineNotice from './components/OfflineNotice'
-import AdminRoute from './components/AdminRoute'
-import AdminLayout from './components/AdminLayout'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import LandingPage from './pages/LandingPage'
@@ -15,9 +13,7 @@ import AddProductPage from './pages/AddProductPage'
 import EditProductPage from './pages/EditProductPage'
 import CategoriesPage from './pages/CategoriesPage'
 import DashboardPage from './pages/DashboardPage'
-import AdminOverviewPage from './pages/admin/AdminOverviewPage'
-import AdminUsersPage from './pages/admin/AdminUsersPage'
-import AdminProductsPage from './pages/admin/AdminProductsPage'
+import InventoryPage from './pages/InventoryPage'
 
 function RootRoute() {
   const { user, loading } = useAuth()
@@ -41,15 +37,9 @@ export default function App() {
               <Route path="/add" element={<AddProductPage />} />
               <Route path="/edit/:id" element={<EditProductPage />} />
               <Route path="/categories" element={<CategoriesPage />} />
+              <Route path="/inventory" element={<InventoryPage />} />
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="*" element={<Navigate to="/products" replace />} />
-            </Route>
-            <Route element={<AdminRoute />}>
-              <Route element={<AdminLayout />}>
-                <Route path="/admin" element={<AdminOverviewPage />} />
-                <Route path="/admin/users" element={<AdminUsersPage />} />
-                <Route path="/admin/products" element={<AdminProductsPage />} />
-              </Route>
             </Route>
           </Routes>
         </SyncProvider>

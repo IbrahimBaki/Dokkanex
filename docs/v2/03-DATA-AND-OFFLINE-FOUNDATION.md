@@ -291,14 +291,17 @@ Dexie version 3 adds or updates:
 
 Do not clear all categories/products/balances on account switching. Every read, pull, local projection, and outbox query filters `user_id`. On login, select only that account’s browser-local, user-scoped partition. On logout, stop sync and retain that browser-local data for later session restoration; do not process or display another account’s pending operations. DokkanX currently provides no application-level encryption of IndexedDB. A future explicit “remove offline data for this account” control may purge only that account after confirmation.
 
+### C1 legacy queue bridge refinement
+
+Dexie V3 retains every V1 `sync_queue` row unchanged. The schema upgrade does not assign it to whichever account happens to be logged in, because upgrade can occur before reliable Auth context exists. C2 bridges only proven category CRUD; unsupported product mutations and ambiguous/unowned rows receive a local `blocked` marker and remain unsubmitted. C2 is a separate data-layer runner; the existing V1 runtime remains active until C3 explicitly wires the replacement lifecycle, preventing two engines from processing the same bridged operation.
+
 ### 9.4 Sync algorithm
 
 ```mermaid
 flowchart TD
   A[Authenticated user and online] --> B[Load only user's pending operations]
   B --> C[Resolve dependencies and FIFO per entity]
-  C --> D[Upload new image object if needed]
-  D --> E[Post metadata/category/archive RPC or REST operation]
+  C --> E[Post metadata/category/archive RPC or REST operation]
   E --> F[Post inventory/count RPC with stable UUID]
   F --> G{Result}
   G -->|accepted or duplicate receipt| H[Store receipt; mark succeeded]
@@ -316,7 +319,7 @@ Detailed sequence:
 
 1. Lock a single sync runner per browser/account; never process operations for a stale AuthContext user.
 2. Recover abandoned `syncing` records to `pending` on app start if no receipt is present.
-3. Push ready operations in deterministic local sequence, respecting dependencies. Coalesce only safe mutable metadata operations for the same product *before* their first attempt; never coalesce inventory movement/count operations.
+3. Push ready operations in deterministic local sequence, respecting dependencies. C2 does not coalesce business operations; image staging/dependency sequencing is C3 work. Never coalesce inventory movement/count operations.
 4. For movement/count RPC calls, preserve the same `operation_id` across every retry. Treat a primary-key duplicate with matching `payload_hash` as success and fetch/return the stored receipt/balance.
 5. After a bounded batch, pull remote products, categories, balances, and movements using per-user `server_sequence`/updated cursor. Pull accepted movement history before calculating projections.
 6. Within one Dexie transaction, merge remote accepted records and then replay still-pending local inventory operations in sequence to create the local projected balance. Keep conflicts visibly distinct from accepted/pending state.
@@ -473,6 +476,8 @@ Add a minimal test stack in Step 3B before any production foundation migration:
 Minimum invariant fixtures include two users, one V1 legacy product with no balance, one explicit-zero product, a decimal-unit product, a negative-balance product, a pending retry operation, a metadata conflict, and a stock-count conflict.
 
 The SQL/RPC suite must additionally prove the balance-integrity invariant after every accepted opening/add/remove/count/damage/correction: canonical accepted movement sum equals the materialized balance. It must test drift detection/rebuild on a controlled fixture and prove that rebuild does not create a balance for a legacy Stock-not-set product.
+
+**Non-blocking pre-production hardening:** the server drift diagnostic must ultimately compare canonical movement/balance ownership against `products.user_id` as well as against each other. Current posting RPCs prevent normal creation of that corruption and rebuild fails safely, so this does not block C1/C2; it must be closed before production deployment.
 
 CI should at least run unit tests, a local `supabase db reset` migration recreation, RLS/RPC integration suite, and production build. No cloud staging project is required for this gate.
 

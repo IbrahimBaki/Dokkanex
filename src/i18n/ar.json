@@ -2,6 +2,7 @@
   "nav": {
     "categories": "الفئات",
     "products": "المنتجات",
+    "inventory": "المخزون",
     "analytics": "التحليلات",
     "online": "متصل",
     "offline": "غير متصل",
@@ -134,7 +135,32 @@
     "details": "تفاصيل",
     "edit": "تعديل",
     "delete": "حذف"
+    ,"currentStock": "المخزون الحالي: {{quantity}} {{unit}}"
+    ,"stockNotSet": "المخزون غير محدد"
+    ,"initializeStock": "تحديد المخزون"
+    ,"status": { "in_stock": "متوفر", "low_stock": "مخزون منخفض", "out_of_stock": "نفد المخزون", "stock_not_set": "المخزون غير محدد" }
   },
+  "inventory": {
+    "title": "المخزون",
+    "products": "المنتجات",
+    "search": "البحث في المخزون",
+    "loading": "جارٍ تحميل المخزون...",
+    "product": "المنتج",
+    "category": "الفئة",
+    "quantity": "الكمية",
+    "status": "الحالة",
+    "noCategory": "بدون فئة",
+    "noProducts": "لا توجد منتجات لتتبعها بعد",
+    "noMatchingProducts": "لا توجد منتجات مطابقة",
+    "noMatchingFilter": "لا توجد منتجات مطابقة لهذا الفلتر",
+    "initialize": "تحديد المخزون",
+    "filters": { "all": "الكل", "low_stock": "مخزون منخفض", "out_of_stock": "نفد المخزون", "stock_not_set": "المخزون غير محدد" },
+    "statuses": { "in_stock": "متوفر", "low_stock": "مخزون منخفض", "out_of_stock": "نفد المخزون", "stock_not_set": "المخزون غير محدد" },
+    "stockNotSet": "المخزون غير محدد"
+  },
+  "adjustStock": { "title": "تعديل المخزون", "open": "تعديل المخزون", "current": "المخزون الحالي: {{quantity}} {{unit}}", "quantity": "الكمية", "preview": "المخزون الجديد: {{quantity}} {{unit}}", "confirm": "حفظ التعديل", "cancel": "إلغاء", "invalidQuantity": "أدخل كمية صالحة.", "noChange": "لا يلزم تغيير المخزون.", "confirmNegative": "تأكيد المخزون السالب", "negativeWarning": "المخزون الحالي {{before}} {{unit}}. المتابعة ستجعل المخزون {{after}} {{unit}}.", "actions": { "add": "إضافة كمية", "remove": "سحب كمية", "count": "جرد / تحديد الكمية الفعلية", "damage": "تالف أو فاقد" } },
+  "activity": { "title": "نشاط المخزون", "open": "النشاط", "empty": "لا يوجد نشاط مخزون حديث", "types": { "opening": "المخزون الافتتاحي", "add": "إضافة كمية", "remove": "سحب كمية", "count": "جرد المخزون", "damage": "تالف أو فاقد" }, "states": { "pending": "في انتظار المزامنة", "synced": "تمت المزامنة", "needs_attention": "يحتاج مراجعة" }, "count": "تم جرد {{counted}} {{unit}} · التغيير {{delta}} {{unit}}" },
+  "initializeStock": { "title": "تحديد المخزون", "startsTracking": "يبدأ هذا تتبع مخزون هذا المنتج.", "unit": "الوحدة", "quantity": "الكمية الابتدائية", "confirm": "تحديد المخزون", "cancel": "إلغاء", "saving": "جارٍ الحفظ...", "invalidQuantity": "أدخل كمية صالحة تساوي صفراً أو أكثر.", "alreadyInitialized": "تم تحديد مخزون هذا المنتج بالفعل.", "failed": "تعذر تحديد المخزون: {{error}}" },
   "productForm": {
     "name": "اسم المنتج",
     "namePlaceholder": "أدخل اسم المنتج",
@@ -143,8 +169,15 @@
     "compressingImage": "جاري ضغط الصورة...",
     "clickToSelectImage": "اضغط لاختيار صورة",
     "worksOffline": "يعمل بدون إنترنت • JPG, PNG, WEBP",
-    "wholesalePrice": "سعر الجملة",
+    "wholesalePrice": "سعر الشراء / التكلفة",
     "sellingPrice": "سعر البيع",
+    "unit": "الوحدة",
+    "openingQuantity": "الكمية الافتتاحية",
+    "lowStockThreshold": "حد المخزون المنخفض",
+    "stockNotSet": "المخزون غير محدد",
+    "currentStock": "المخزون الحالي: {{quantity}} {{unit}}",
+    "unitLocked": "لا يمكن تغيير الوحدة بعد تهيئة المخزون.",
+    "units": { "piece": "قطعة", "pack": "عبوة", "box": "صندوق", "meter": "متر", "kilogram": "كيلوغرام", "gram": "غرام", "liter": "لتر" },
     "category": "الفئة",
     "selectCategory": "— اختر فئة —",
     "addNewCategory": "+ إضافة فئة جديدة",
@@ -156,8 +189,10 @@
     "cancel": "إلغاء",
     "errors": {
       "nameRequired": "اسم المنتج مطلوب",
-      "invalidWholesale": "سعر الجملة غير صحيح",
+      "invalidWholesale": "سعر الشراء / التكلفة غير صالح",
       "invalidSelling": "سعر البيع غير صحيح",
+      "invalidOpeningQuantity": "يجب أن تكون الكمية الافتتاحية كمية صالحة وغير سالبة",
+      "invalidLowStockThreshold": "يجب أن يكون حد المخزون المنخفض كمية صالحة وغير سالبة",
       "imageError": "فشل معالجة الصورة، جرّب صورة أخرى",
       "categoryAdd": "فشل إضافة الفئة: {{error}}",
       "saveFailed": "فشل حفظ المنتج: {{error}}"

@@ -1,0 +1,199 @@
+diff --git a/tmp/tmp.KiB8tkztBX/syncManager.js b/src/lib/syncManager.js
+index b2ae138..f7c0c93 100755
+--- a/tmp/tmp.KiB8tkztBX/syncManager.js
++++ b/src/lib/syncManager.js
+@@ -2,7 +2,14 @@ import { db } from './db';
+ import { supabase, deleteImage } from './supabase';
+ import { uploadBase64ToSupabase } from './imageUtils';
+ 
+-export async function pullFromSupabase(userId) {
++async function ownedLegacyRow(item, userId) {
++  if (item.data?.user_id) return item.data.user_id === userId;
++  if (!item.record_id || !['products', 'categories'].includes(item.table_name)) return false;
++  const local = await db[item.table_name].get(item.record_id);
++  return local?.user_id === userId;
++}
++
++export async function pullFromSupabase(userId, { isCurrent = async () => true } = {}) {
+   const PAGE_SIZE = 1000;
+ 
+   // Categories: full replace (no local-only fields)
+@@ -20,8 +27,12 @@ export async function pullFromSupabase(userId) {
+     catFrom += PAGE_SIZE;
+   }
+ 
+-  await db.categories.clear();
+-  if (allCatData.length > 0) await db.categories.bulkPut(allCatData);
++  if (!await isCurrent()) return { cancelled: true };
++  await db.transaction('rw', db.categories, async () => {
++    const ids = new Set(allCatData.map((row) => row.id));
++    for (const row of allCatData) await db.categories.put(row);
++    for (const local of await db.categories.where('user_id').equals(userId).toArray()) if (!ids.has(local.id)) await db.categories.delete(local.id);
++  });
+ 
+   // Products: merge carefully — preserve pending local records (e.g. image_base64 not yet uploaded)
+   let allProdData = [];
+@@ -38,11 +49,11 @@ export async function pullFromSupabase(userId) {
+     prodFrom += PAGE_SIZE;
+   }
+ 
+-  if (allProdData.length >= 0) {
++  if (allProdData.length >= 0 && await isCurrent()) {
+     // IDs that still have pending sync operations
+     const pendingIds = new Set(
+       (await db.sync_queue.where('table_name').equals('products').toArray())
+-        .map(q => q.record_id)
++        .filter(q => q.data?.user_id === userId).map(q => q.record_id)
+     );
+ 
+     // Update/insert products from Supabase that are not pending
+@@ -51,7 +62,7 @@ export async function pullFromSupabase(userId) {
+ 
+     // Remove products deleted remotely (not pending locally)
+     const remoteIds = new Set(allProdData.map(p => p.id));
+-    const localAll = await db.products.toArray();
++    const localAll = await db.products.where('user_id').equals(userId).toArray();
+     for (const local of localAll) {
+       if (!remoteIds.has(local.id) && !pendingIds.has(local.id)) {
+         await db.products.delete(local.id);
+@@ -62,8 +73,11 @@ export async function pullFromSupabase(userId) {
+   await db.app_meta.put({ key: 'last_sync', value: new Date().toISOString() });
+ }
+ 
+-export async function pushToSupabase() {
+-  const queue = await db.sync_queue.orderBy('id').toArray();
++export async function pushToSupabase(userId, { isCurrent = async () => true } = {}) {
++  const queue = [];
++  for (const item of await db.sync_queue.orderBy('id').toArray()) {
++    if (await ownedLegacyRow(item, userId)) queue.push(item);
++  }
+   if (queue.length === 0) return { pushed: 0, failed: 0 };
+ 
+   let pushed = 0;
+@@ -71,6 +85,7 @@ export async function pushToSupabase() {
+ 
+   for (const item of queue) {
+     try {
++      if (!await isCurrent()) return { pushed, failed, cancelled: true };
+       const rawData = item.data ? { ...item.data } : {};
+ 
+       // Upload pending Base64 image before INSERT or UPDATE
+@@ -115,6 +130,7 @@ export async function pushToSupabase() {
+         if (error) throw error;
+       }
+ 
++      if (!await isCurrent()) return { pushed, failed, cancelled: true };
+       await db.sync_queue.delete(item.id);
+       pushed++;
+     } catch {
+@@ -125,9 +141,10 @@ export async function pushToSupabase() {
+   return { pushed, failed };
+ }
+ 
+-export async function fullSync(userId) {
+-  const pushResult = await pushToSupabase();
+-  await pullFromSupabase(userId);
++export async function fullSync(userId, options = {}) {
++  const pushResult = await pushToSupabase(userId, options);
++  if (pushResult.cancelled) return pushResult;
++  await pullFromSupabase(userId, options);
+   return pushResult;
+ }
+ 
+diff --git a/tmp/tmp.KiB8tkztBX/v2Sync.js b/src/lib/v2Sync.js
+index 032ebf6..06b79b2 100644
+--- a/tmp/tmp.KiB8tkztBX/v2Sync.js
++++ b/src/lib/v2Sync.js
+@@ -333,7 +333,7 @@ export function getV2SyncStatus(userId, database = defaultDb) {
+   }));
+ }
+ 
+-export function createV2SyncRunner({ client, database = defaultDb, getActiveUserId = () => activeUserId(client) }) {
++export function createV2SyncRunner({ client, database = defaultDb, getActiveUserId = () => activeUserId(client), legacyBridgeMode = 'disabled' }) {
+   let generation = 0;
+   return {
+     invalidate() { generation += 1; },
+@@ -344,7 +344,7 @@ export function createV2SyncRunner({ client, database = defaultDb, getActiveUser
+       const run = (async () => {
+         const isCurrent = async () => generation === runGeneration && await getActiveUserId() === userId;
+         if (!await isCurrent()) return { cancelled: true };
+-        await bridgeLegacyQueue(userId, database);
++        if (legacyBridgeMode === 'enabled') await bridgeLegacyQueue(userId, database);
+         const ready = await selectReadyOutbox(userId, database);
+         const results = [];
+         for (const operation of ready) {
+diff --git a/tmp/tmp.KiB8tkztBX/SyncContext.jsx b/src/context/SyncContext.jsx
+index 0b6c0cd..dbe67fe 100755
+--- a/tmp/tmp.KiB8tkztBX/SyncContext.jsx
++++ b/src/context/SyncContext.jsx
+@@ -1,6 +1,9 @@
+ import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+ import { fullSync, getPendingCount, getLastSync } from '../lib/syncManager';
+-import { dbReady } from '../lib/db';
++import { db, dbReady } from '../lib/db';
++import { supabase } from '../lib/supabase';
++import { createV2SyncRunner, getV2SyncStatus } from '../lib/v2Sync';
++import { cleanupSucceededOutbox, recoverAbandonedSyncing } from '../lib/outbox';
+ import { useAuth } from './AuthContext';
+ 
+ const SyncContext = createContext({});
+@@ -13,6 +16,9 @@ export function SyncProvider({ children }) {
+   const [isOnline, setIsOnline] = useState(navigator.onLine);
+   const [syncVersion, setSyncVersion] = useState(0);
+   const syncingRef = useRef(false);
++  const generationRef = useRef(0);
++  const runnerRef = useRef(null);
++  if (!runnerRef.current) runnerRef.current = createV2SyncRunner({ client: supabase, database: db, legacyBridgeMode: 'disabled' });
+ 
+   const refreshMeta = useCallback(async () => {
+     setPendingCount(await getPendingCount());
+@@ -21,10 +27,21 @@ export function SyncProvider({ children }) {
+ 
+   const handleSync = useCallback(async () => {
+     if (!user || syncingRef.current || !navigator.onLine) return;
++    const userId = user.id;
++    const generation = generationRef.current;
++    const isCurrent = async () => {
++      const { data } = await supabase.auth.getSession();
++      return generation === generationRef.current && data.session?.user?.id === userId;
++    };
+     syncingRef.current = true;
+     setSyncing(true);
+     try {
+-      await fullSync(user.id);
++      await fullSync(userId, { isCurrent });
++      if (!await isCurrent()) return;
++      await recoverAbandonedSyncing(userId, {}, db);
++      await runnerRef.current.sync(userId);
++      await cleanupSucceededOutbox(userId, { keepRecent: 50 }, db).catch(() => {});
++      if (!await isCurrent()) return;
+       await refreshMeta();
+       setSyncVersion(v => v + 1);
+     } finally {
+@@ -33,6 +50,13 @@ export function SyncProvider({ children }) {
+     }
+   }, [user, refreshMeta]);
+ 
++  useEffect(() => {
++    generationRef.current += 1;
++    runnerRef.current?.invalidate();
++    syncingRef.current = false;
++    if (!user) { setSyncing(false); setPendingCount(0); setLastSync(null); }
++  }, [user?.id]);
++
+   useEffect(() => {
+     if (!user) return;
+     dbReady
+diff --git a/docs/v2/03B-C3-A-SYNC-LIFECYCLE.md b/docs/v2/03B-C3-A-SYNC-LIFECYCLE.md
+new file mode 100644
+index 0000000..0758f39
+--- /dev/null
++++ b/docs/v2/03B-C3-A-SYNC-LIFECYCLE.md
+@@ -0,0 +1,7 @@
++# Step 3B-C3-A — Sync Lifecycle Coexistence
++
++During C3-A, V1 owns `sync_queue` catalog operations and V2 owns `outbox_operations` inventory operations. The V2 runner defaults to `legacyBridgeMode: 'disabled'`; bridging remains an explicit handoff tool for C3-B, preventing duplicate category/catalog submission.
++
++`syncManager` now accepts an explicit user ID and only processes legacy rows whose payload or existing local entity proves ownership. Ambiguous rows remain untouched. Product/category pulls replace only the active user's Dexie partition; account data is never globally cleared.
++
++`SyncContext` serializes one lifecycle cycle: wait for IndexedDB, run ownership-safe V1 sync, recover stale receipt-less V2 syncing rows, run V2 with bridging disabled, then perform bounded succeeded cleanup. Auth session and generation checks prevent stale V1/V2 responses from writing after logout or account switch. C3-B must hand catalog writes to V2, add image staging, then explicitly retire the competing V1 runtime.

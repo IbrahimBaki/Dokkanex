@@ -2,6 +2,7 @@
   "nav": {
     "categories": "Categories",
     "products": "Products",
+    "inventory": "Inventory",
     "analytics": "Analytics",
     "online": "Online",
     "offline": "Offline",
@@ -134,7 +135,32 @@
     "details": "Details",
     "edit": "Edit",
     "delete": "Delete"
+    ,"currentStock": "Current stock: {{quantity}} {{unit}}"
+    ,"stockNotSet": "Stock not set"
+    ,"initializeStock": "Initialize stock"
+    ,"status": { "in_stock": "In stock", "low_stock": "Low stock", "out_of_stock": "Out of stock", "stock_not_set": "Stock not set" }
   },
+  "inventory": {
+    "title": "Inventory",
+    "products": "Products",
+    "search": "Search inventory",
+    "loading": "Loading inventory...",
+    "product": "Product",
+    "category": "Category",
+    "quantity": "Quantity",
+    "status": "Status",
+    "noCategory": "No category",
+    "noProducts": "No products to track yet",
+    "noMatchingProducts": "No matching products",
+    "noMatchingFilter": "No products match this filter",
+    "initialize": "Initialize stock",
+    "filters": { "all": "All", "low_stock": "Low stock", "out_of_stock": "Out of stock", "stock_not_set": "Stock not set" },
+    "statuses": { "in_stock": "In stock", "low_stock": "Low stock", "out_of_stock": "Out of stock", "stock_not_set": "Stock not set" },
+    "stockNotSet": "Stock not set"
+  },
+  "adjustStock": { "title": "Adjust stock", "open": "Adjust stock", "current": "Current stock: {{quantity}} {{unit}}", "quantity": "Quantity", "preview": "New stock: {{quantity}} {{unit}}", "confirm": "Save change", "cancel": "Cancel", "invalidQuantity": "Enter a valid quantity.", "noChange": "No stock change needed.", "confirmNegative": "Confirm negative stock", "negativeWarning": "Current stock is {{before}} {{unit}}. Continuing will make stock {{after}} {{unit}}.", "actions": { "add": "Add quantity", "remove": "Remove quantity", "count": "Stock count / Set actual quantity", "damage": "Damaged or lost stock" } },
+  "activity": { "title": "Stock activity", "open": "Activity", "empty": "No recent stock activity", "types": { "opening": "Opening stock", "add": "Added quantity", "remove": "Removed quantity", "count": "Stock count", "damage": "Damaged or lost" }, "states": { "pending": "Pending sync", "synced": "Synced", "needs_attention": "Needs attention" }, "count": "{{counted}} {{unit}} counted · Changed by {{delta}} {{unit}}" },
+  "initializeStock": { "title": "Initialize stock", "startsTracking": "This starts stock tracking for this product.", "unit": "Unit", "quantity": "Starting quantity", "confirm": "Initialize stock", "cancel": "Cancel", "saving": "Saving...", "invalidQuantity": "Enter a valid quantity of zero or more.", "alreadyInitialized": "Stock is already initialized for this product.", "failed": "Could not initialize stock: {{error}}" },
   "productForm": {
     "name": "Product Name",
     "namePlaceholder": "Enter product name",
@@ -143,8 +169,15 @@
     "compressingImage": "Compressing image...",
     "clickToSelectImage": "Click to select image",
     "worksOffline": "Works offline • JPG, PNG, WEBP",
-    "wholesalePrice": "Wholesale Price",
+    "wholesalePrice": "Purchase price / Cost",
     "sellingPrice": "Selling Price",
+    "unit": "Unit",
+    "openingQuantity": "Opening quantity",
+    "lowStockThreshold": "Low-stock threshold",
+    "stockNotSet": "Stock not set",
+    "currentStock": "Current stock: {{quantity}} {{unit}}",
+    "unitLocked": "Unit cannot be changed after stock is initialized.",
+    "units": { "piece": "Piece", "pack": "Pack", "box": "Box", "meter": "Meter", "kilogram": "Kilogram", "gram": "Gram", "liter": "Liter" },
     "category": "Category",
     "selectCategory": "— Select a category —",
     "addNewCategory": "+ Add new category",
@@ -156,8 +189,10 @@
     "cancel": "Cancel",
     "errors": {
       "nameRequired": "Product name is required",
-      "invalidWholesale": "Invalid wholesale price",
+      "invalidWholesale": "Invalid purchase price / cost",
       "invalidSelling": "Invalid selling price",
+      "invalidOpeningQuantity": "Opening quantity must be a valid non-negative quantity",
+      "invalidLowStockThreshold": "Low-stock threshold must be a valid non-negative quantity",
       "imageError": "Failed to process image, please try another",
       "categoryAdd": "Failed to add category: {{error}}",
       "saveFailed": "Failed to save product: {{error}}"

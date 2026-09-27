@@ -1,0 +1,515 @@
+diff --git a/src/lib/v2Sync.js b/src/lib/v2Sync.js
+new file mode 100644
+index 0000000..f21425c
+--- /dev/null
++++ b/src/lib/v2Sync.js
+@@ -0,0 +1,282 @@
++import { db as defaultDb } from './db';
++import { addQuantities, normalizeQuantity } from './quantity';
++import { getProjectableOutbox, proveLegacyQueueOwnership, transitionOutboxOperation, createOutboxOperation } from './outbox';
++import { replayPendingProjection } from './inventoryLocal';
++
++const RUNNERS = new Map();
++const RETRY_BASE_MS = 1_000;
++const RETRY_MAX_MS = 5 * 60 * 1_000;
++
++const stateId = (userId, scope) => `v2:${scope}:${userId}`;
++const nowIso = () => new Date().toISOString();
++
++export function classifySyncError(error) {
++  const code = error?.code ?? error?.status;
++  const message = String(error?.message ?? '').toLowerCase();
++  if (!error || message.includes('network') || message.includes('fetch') || message.includes('timeout') || (typeof code === 'number' && code >= 500)) return { state: 'retryable_failed', code: 'network' };
++  if (code === '42501' || code === 401 || code === 403) return { state: 'permanent_failed', code: 'authorization' };
++  if (code === '23514' || code === '22023' || code === 400) return { state: 'permanent_failed', code: 'validation' };
++  return { state: 'retryable_failed', code: 'remote_error' };
++}
++
++function retryAt(attemptCount, now = Date.now()) {
++  return new Date(now + Math.min(RETRY_MAX_MS, RETRY_BASE_MS * (2 ** Math.max(0, attemptCount - 1)))).toISOString();
++}
++
++async function activeUserId(client) {
++  const { data, error } = await client.auth.getSession();
++  if (error) throw error;
++  return data.session?.user?.id ?? null;
++}
++
++function safeMessage(error) {
++  return String(error?.message ?? 'Sync failed').replace(/[\r\n]+/g, ' ').slice(0, 240);
++}
++
++export async function selectReadyOutbox(userId, database = defaultDb, now = Date.now()) {
++  const rows = await database.outbox_operations.where('user_id').equals(userId).toArray();
++  const byId = new Map(rows.map((row) => [row.operation_id, row]));
++  return rows
++    .filter((row) => row.status === 'pending' || (row.status === 'retryable_failed' && (!row.next_attempt_at || Date.parse(row.next_attempt_at) <= now)))
++    .filter((row) => !row.depends_on || byId.get(row.depends_on)?.reconciled_at)
++    .filter((row) => !rows.some((earlier) => (
++      earlier.sequence < row.sequence
++      && earlier.entity_type === row.entity_type
++      && earlier.entity_id === row.entity_id
++      && !earlier.reconciled_at
++    )))
++    .sort((a, b) => a.sequence - b.sequence)
++    .filter((row, index, sorted) => !sorted.slice(0, index).some((earlier) => earlier.entity_type === row.entity_type && earlier.entity_id === row.entity_id));
++}
++
++async function recomputeProduct(userId, productId, database) {
++  const balance = await database.inventory_balances.get(productId);
++  const operations = await getProjectableOutbox(userId, productId, database);
++  const canonical = balance?.server_initialized
++    ? { server_initialized: true, server_quantity: balance.server_quantity, server_revision: balance.server_revision }
++    : { server_initialized: false, server_quantity: null, server_revision: 0 };
++  const projected = replayPendingProjection(canonical, operations.map((operation) => ({ ...operation.payload, status: operation.status, sequence: operation.sequence })));
++  if (!projected.initialized && !balance) return null;
++  const current = {
++    ...(balance ?? { product_id: productId, user_id: userId, server_initialized: false, server_quantity: null, server_revision: 0 }),
++    user_id: userId,
++    locally_initialized: projected.initialized,
++    current_quantity: projected.current_quantity,
++    projected_revision: projected.projected_revision,
++    pending_count: operations.length,
++    updated_at: nowIso(),
++  };
++  await database.inventory_balances.put(current);
++  return current;
++}
++
++async function mergeInventoryReceipt(userId, operation, receipt, database) {
++  const movement = receipt.movement;
++  await database.transaction('rw', database.inventory_movements, database.inventory_balances, database.outbox_operations, async () => {
++    if (movement) {
++      await database.inventory_movements.put({ ...movement, id: movement.id, user_id: userId, qty_change: normalizeQuantity(movement.qty_change), status: 'accepted' });
++    }
++    const local = await database.inventory_balances.get(operation.entity_id);
++    await database.inventory_balances.put({
++      ...(local ?? { product_id: operation.entity_id, user_id: userId }),
++      product_id: operation.entity_id, user_id: userId,
++      server_initialized: true,
++      server_quantity: normalizeQuantity(receipt.balance_after),
++      server_revision: Number(receipt.revision_after),
++      initialized_at: local?.initialized_at ?? movement?.posted_at ?? nowIso(),
++      last_movement_id: movement?.id ?? local?.last_movement_id ?? null,
++      updated_at: nowIso(),
++    });
++    await database.outbox_operations.update(operation.operation_id, { server_receipt: receipt, reconciled_at: nowIso(), updated_at: nowIso() });
++    if (movement) await database.inventory_movements.update(movement.id, { status: 'accepted' });
++  });
++}
++
++async function mergeProduct(userId, product, database) {
++  if (!product || product.user_id !== userId) return;
++  const local = await database.products.get(product.id);
++  // A V2 metadata draft is held in its outbox payload; the canonical product
++  // always wins locally, while the draft remains reviewable in that operation.
++  await database.products.put({ ...(local ?? {}), ...product, id: product.id, user_id: userId });
++}
++
++async function postInventory(client, operation) {
++  const payload = operation.payload;
++  if (operation.action === 'stock_count') {
++    return client.rpc('post_stock_count', {
++      p_operation_id: operation.operation_id, p_product_id: operation.entity_id,
++      p_expected_base_balance: payload.base_balance, p_expected_revision: payload.base_revision,
++      p_counted_quantity: payload.counted_quantity, p_client_created_at: payload.client_created_at,
++      p_reason: payload.reason ?? null, p_note: payload.note ?? null,
++    });
++  }
++  return client.rpc('post_inventory_movement', {
++    p_operation_id: operation.operation_id, p_product_id: operation.entity_id,
++    p_movement_type: payload.movement_type, p_quantity: payload.qty_change,
++    p_client_created_at: payload.client_created_at, p_reason: payload.reason ?? null,
++    p_note: payload.note ?? null, p_reverses_movement_id: payload.reverses_movement_id ?? null,
++  });
++}
++
++async function pushCategory(client, operation) {
++  const payload = operation.payload ?? {};
++  if (operation.action === 'create') return client.from('categories').insert(payload).select().single();
++  if (operation.action === 'update') return client.from('categories').update(payload).eq('id', operation.entity_id).select().single();
++  return client.from('categories').delete().eq('id', operation.entity_id).select();
++}
++
++async function pushOperation(userId, operation, { client, database, isCurrent }) {
++  if (!isCurrent()) return { cancelled: true };
++  const syncing = await transitionOutboxOperation(operation.operation_id, 'syncing', {}, database);
++  try {
++    let response;
++    if (operation.entity_type === 'inventory_movement') response = await postInventory(client, syncing);
++    else if (operation.entity_type === 'product_metadata') response = await client.rpc('update_product_metadata', { p_product_id: operation.entity_id, p_expected_metadata_version: operation.payload.expected_metadata_version, p_patch: operation.payload.patch });
++    else if (operation.entity_type === 'product_archive') response = await client.rpc('archive_product', { p_product_id: operation.entity_id });
++    else if (operation.entity_type === 'category') response = await pushCategory(client, operation);
++    else throw Object.assign(new Error('Unsupported V2 operation'), { code: '22023' });
++    if (!isCurrent()) return { cancelled: true };
++    if (response.error) throw response.error;
++    const result = response.data;
++    if (operation.entity_type === 'inventory_movement') {
++      if (result?.status === 'conflict') {
++        await transitionOutboxOperation(operation.operation_id, 'conflict', { last_error_code: 'stock_count_conflict', last_error_message: 'Stock changed remotely' }, database);
++        return { conflict: true };
++      }
++      if (result?.status === 'no_change') {
++        await transitionOutboxOperation(operation.operation_id, 'succeeded', { server_receipt: null, reconciled_at: nowIso() }, database);
++        return { no_change: true };
++      }
++      await mergeInventoryReceipt(userId, operation, result, database);
++      await transitionOutboxOperation(operation.operation_id, 'succeeded', {}, database);
++      await recomputeProduct(userId, operation.entity_id, database);
++    } else if (operation.entity_type === 'product_metadata') {
++      if (result?.status === 'conflict') {
++        const remote = await client.from('products').select('*').eq('id', operation.entity_id).single();
++        if (remote.data) await mergeProduct(userId, remote.data, database);
++        const intended = operation.payload.patch ?? {};
++        const applied = remote.data && Object.entries(intended).every(([key, value]) => remote.data[key] === value);
++        await transitionOutboxOperation(operation.operation_id, applied ? 'succeeded' : 'conflict', applied ? { reconciled_at: nowIso() } : { last_error_code: 'metadata_conflict', last_error_message: 'Product changed remotely' }, database);
++      } else {
++        await mergeProduct(userId, result.product, database);
++        await transitionOutboxOperation(operation.operation_id, 'succeeded', { server_receipt: result, reconciled_at: nowIso() }, database);
++      }
++    } else if (operation.entity_type === 'product_archive') {
++      await mergeProduct(userId, result.product, database);
++      await transitionOutboxOperation(operation.operation_id, 'succeeded', { server_receipt: result, reconciled_at: nowIso() }, database);
++    } else {
++      if (operation.action === 'delete') await database.categories.delete(operation.entity_id);
++      else if (result) await database.categories.put({ ...result, user_id: userId });
++      await transitionOutboxOperation(operation.operation_id, 'succeeded', { server_receipt: result ?? { deleted: true }, reconciled_at: nowIso() }, database);
++    }
++    return { pushed: true };
++  } catch (error) {
++    if (!isCurrent()) return { cancelled: true };
++    const classification = classifySyncError(error);
++    const failed = await transitionOutboxOperation(operation.operation_id, classification.state, { last_error_code: classification.code, last_error_message: safeMessage(error) }, database);
++    if (classification.state === 'retryable_failed') await database.outbox_operations.update(operation.operation_id, { next_attempt_at: retryAt(failed.attempt_count) });
++    return { failed: true, classification };
++  }
++}
++
++async function pullUserState(userId, { client, database, isCurrent }) {
++  if (!await isCurrent()) return;
++  const [products, categories, balances, cursorState] = await Promise.all([
++    client.from('products').select('*').eq('user_id', userId),
++    client.from('categories').select('*').eq('user_id', userId),
++    client.from('inventory_balances').select('*').eq('user_id', userId),
++    database.sync_state.get(stateId(userId, 'movement_cursor')),
++  ]);
++  if (!await isCurrent()) return;
++  for (const response of [products, categories, balances]) if (response.error) throw response.error;
++  const cursor = Number(cursorState?.value ?? 0);
++  const movements = await client.from('stock_movements').select('*').eq('user_id', userId).neq('movement_type', 'legacy').gt('server_sequence', cursor).order('server_sequence', { ascending: true });
++  if (movements.error) throw movements.error;
++  await database.transaction('rw', database.products, database.categories, database.inventory_balances, database.inventory_movements, database.outbox_operations, database.sync_state, async () => {
++    const unresolved = await database.outbox_operations.where('user_id').equals(userId).toArray();
++    const pendingProductIds = new Set(unresolved
++      .filter((row) => ['product_metadata', 'product_archive'].includes(row.entity_type) && !row.reconciled_at)
++      .map((row) => row.entity_id));
++    const pendingCategoryIds = new Set(unresolved
++      .filter((row) => row.entity_type === 'category' && !row.reconciled_at)
++      .map((row) => row.entity_id));
++    const remoteProductIds = new Set(products.data.map((row) => row.id));
++    for (const row of products.data) await mergeProduct(userId, row, database);
++    for (const local of await database.products.where('user_id').equals(userId).toArray()) if (!remoteProductIds.has(local.id) && !pendingProductIds.has(local.id)) await database.products.delete(local.id);
++    const remoteCategoryIds = new Set(categories.data.map((row) => row.id));
++    for (const row of categories.data) await database.categories.put({ ...row, user_id: userId });
++    for (const local of await database.categories.where('user_id').equals(userId).toArray()) if (!remoteCategoryIds.has(local.id) && !pendingCategoryIds.has(local.id)) await database.categories.delete(local.id);
++    for (const row of balances.data) await database.inventory_balances.put({
++      ...(await database.inventory_balances.get(row.product_id) ?? {}), product_id: row.product_id, user_id: userId,
++      server_initialized: true, server_quantity: normalizeQuantity(row.current_quantity), server_revision: Number(row.revision),
++      initialized_at: row.initialized_at, last_movement_id: row.last_movement_id, updated_at: row.updated_at,
++    });
++    let nextCursor = cursor;
++    for (const row of movements.data) {
++      await database.inventory_movements.put({ ...row, id: row.id, user_id: userId, qty_change: normalizeQuantity(row.qty_change), status: 'accepted' });
++      await database.outbox_operations.update(row.id, { reconciled_at: nowIso(), server_receipt: { status: 'accepted', movement: row } });
++      nextCursor = Math.max(nextCursor, Number(row.server_sequence));
++    }
++    await database.sync_state.put({ id: stateId(userId, 'movement_cursor'), user_id: userId, scope: 'movement_cursor', value: nextCursor, updated_at: nowIso() });
++  });
++  const affected = new Set([...(balances.data ?? []).map((row) => row.product_id), ...(movements.data ?? []).map((row) => row.product_id)]);
++  for (const productId of affected) await recomputeProduct(userId, productId, database);
++}
++
++export async function bridgeLegacyQueue(userId, database = defaultDb) {
++  const rows = await database.sync_queue.orderBy('id').toArray();
++  for (const row of rows) {
++    if (row.v2_bridge_operation_id) continue;
++    const ownership = await proveLegacyQueueOwnership(row, userId, database);
++    await database.transaction('rw', database.sync_queue, database.outbox_operations, database.sync_state, async () => {
++      if (row.v2_bridge_operation_id) return;
++      const supportedCategory = ownership.proven && row.table_name === 'categories' && ['INSERT', 'UPDATE', 'DELETE'].includes(row.operation);
++      const operation = await createOutboxOperation({
++        operation_id: `legacy-${row.id}`, user_id: userId,
++        entity_type: supportedCategory ? 'category' : 'legacy_queue',
++        action: supportedCategory ? ({ INSERT: 'create', UPDATE: 'update', DELETE: 'delete' }[row.operation]) : 'blocked',
++        entity_id: row.record_id ?? `legacy-${row.id}`, payload: row.data ?? {},
++        depends_on: null,
++      }, database);
++      if (!supportedCategory) await database.outbox_operations.update(operation.operation_id, { status: 'blocked', last_error_code: ownership.proven ? 'legacy_mapping_unsupported' : 'legacy_ownership_ambiguous', last_error_message: 'Legacy queue row was retained for review' });
++      await database.sync_queue.update(row.id, { v2_bridge_operation_id: operation.operation_id, v2_bridge_status: supportedCategory ? 'bridged' : 'blocked' });
++    });
++  }
++}
++
++export function getV2SyncStatus(userId, database = defaultDb) {
++  return database.outbox_operations.where('user_id').equals(userId).toArray().then((rows) => ({
++    pending: rows.filter((row) => row.status === 'pending').length,
++    retryable_failed: rows.filter((row) => row.status === 'retryable_failed').length,
++    conflict: rows.filter((row) => row.status === 'conflict').length,
++    permanent_failed: rows.filter((row) => row.status === 'permanent_failed').length,
++    blocked: rows.filter((row) => row.status === 'blocked').length,
++  }));
++}
++
++export function createV2SyncRunner({ client, database = defaultDb, getActiveUserId = () => activeUserId(client) }) {
++  let generation = 0;
++  return {
++    invalidate() { generation += 1; },
++    async sync(userId) {
++      const key = `${userId}`;
++      if (RUNNERS.has(key)) return RUNNERS.get(key);
++      const runGeneration = generation;
++      const run = (async () => {
++        const isCurrent = async () => generation === runGeneration && await getActiveUserId() === userId;
++        if (!await isCurrent()) return { cancelled: true };
++        await bridgeLegacyQueue(userId, database);
++        const ready = await selectReadyOutbox(userId, database);
++        const results = [];
++        for (const operation of ready) {
++          if (!await isCurrent()) return { cancelled: true, results };
++          results.push(await pushOperation(userId, operation, { client, database, isCurrent }));
++        }
++        if (await isCurrent()) await pullUserState(userId, { client, database, isCurrent });
++        return { results, cancelled: !await isCurrent() };
++      })().finally(() => RUNNERS.delete(key));
++      RUNNERS.set(key, run);
++      return run;
++    },
++  };
++}
+
+diff --git a/tests/unit/v2-sync.test.js b/tests/unit/v2-sync.test.js
+new file mode 100644
+index 0000000..bc4992f
+--- /dev/null
++++ b/tests/unit/v2-sync.test.js
+@@ -0,0 +1,102 @@
++import { afterEach, describe, expect, it } from 'vitest';
++import { createDatabase } from '../../src/lib/db';
++import { initializeStock } from '../../src/lib/inventoryLocal';
++import { createOutboxOperation, transitionOutboxOperation } from '../../src/lib/outbox';
++import { classifySyncError, createV2SyncRunner, selectReadyOutbox } from '../../src/lib/v2Sync';
++
++const USER_A = 'user-a';
++const USER_B = 'user-b';
++const databases = [];
++
++async function freshDatabase() {
++  const database = createDatabase(`v2-sync-${crypto.randomUUID()}`);
++  databases.push(database);
++  await database.open();
++  return database;
++}
++
++function query(data) {
++  const chain = {
++    eq: () => chain, neq: () => chain, gt: () => chain, order: () => chain,
++    single: async () => ({ data: data[0] ?? null, error: null }),
++    then: (resolve) => resolve({ data, error: null }),
++  };
++  return chain;
++}
++
++function mockClient({ activeUser = USER_A, rpc = async () => ({ data: { status: 'accepted' }, error: null }), tables = {} } = {}) {
++  return {
++    auth: { getSession: async () => ({ data: { session: activeUser ? { user: { id: activeUser } } : null }, error: null }) },
++    rpc,
++    from: (table) => ({
++      select: () => query(tables[table] ?? []),
++      insert: () => query(tables[table] ?? []),
++      update: () => ({ eq: () => query(tables[table] ?? []) }),
++      delete: () => query([]),
++    }),
++  };
++}
++
++afterEach(async () => {
++  await Promise.all(databases.splice(0).map(async (database) => { database.close(); await database.delete(); }));
++});
++
++describe('V2 remote sync runner', () => {
++  it('selects only the active user’s ready FIFO operations and waits for dependencies', async () => {
++    const database = await freshDatabase();
++    const first = await createOutboxOperation({ operation_id: 'a1', user_id: USER_A, entity_type: 'category', action: 'create', entity_id: 'c', payload: {} }, database);
++    await createOutboxOperation({ operation_id: 'a2', user_id: USER_A, entity_type: 'category', action: 'update', entity_id: 'c', payload: {}, depends_on: first.operation_id }, database);
++    await createOutboxOperation({ operation_id: 'b1', user_id: USER_B, entity_type: 'category', action: 'create', entity_id: 'c', payload: {} }, database);
++    expect((await selectReadyOutbox(USER_A, database)).map((row) => row.operation_id)).toEqual(['a1']);
++    await transitionOutboxOperation('a1', 'syncing', {}, database);
++    await transitionOutboxOperation('a1', 'succeeded', { reconciled_at: new Date().toISOString() }, database);
++    expect((await selectReadyOutbox(USER_A, database)).map((row) => row.operation_id)).toEqual(['a2']);
++  });
++
++  it('posts the same inventory UUID, merges the receipt, and retains user isolation', async () => {
++    const database = await freshDatabase();
++    await database.products.put({ id: 'p', user_id: USER_A, name: 'Product' });
++    const local = await initializeStock({ userId: USER_A, productId: 'p', quantity: '2.5' }, database);
++    const rpcCalls = [];
++    const client = mockClient({
++      rpc: async (name, args) => {
++        rpcCalls.push({ name, args });
++        return { data: { status: 'accepted', movement: { id: args.p_operation_id, product_id: 'p', user_id: USER_A, qty_change: '2.500000', movement_type: 'opening', server_sequence: 1, posted_at: '2026-01-01T00:00:00Z' }, balance_after: '2.500000', revision_after: 1 }, error: null };
++      },
++      tables: { products: [{ id: 'p', user_id: USER_A, name: 'Product', metadata_version: 0 }], categories: [], inventory_balances: [{ product_id: 'p', user_id: USER_A, current_quantity: '2.500000', revision: 1, initialized_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' }], stock_movements: [] },
++    });
++    const runner = createV2SyncRunner({ client, database });
++    await runner.sync(USER_A);
++    expect(rpcCalls).toHaveLength(1);
++    expect(rpcCalls[0]).toMatchObject({ name: 'post_inventory_movement', args: { p_operation_id: local.operation.operation_id, p_quantity: '2.500000' } });
++    expect(await database.outbox_operations.get(local.operation.operation_id)).toMatchObject({ status: 'succeeded', reconciled_at: expect.any(String) });
++    expect(await database.inventory_balances.get('p')).toMatchObject({ server_quantity: '2.500000', current_quantity: '2.500000', server_revision: 1 });
++    expect(await database.outbox_operations.where('user_id').equals(USER_B).count()).toBe(0);
++  });
++
++  it('classifies retryable, validation, and stock-count conflict outcomes without silently retrying conflicts', async () => {
++    const database = await freshDatabase();
++    await database.products.put({ id: 'p', user_id: USER_A, name: 'Product' });
++    const opening = await initializeStock({ userId: USER_A, productId: 'p', quantity: '1' }, database);
++    const client = mockClient({ rpc: async () => ({ error: { code: '23514', message: 'bad request' } }) });
++    await createV2SyncRunner({ client, database }).sync(USER_A);
++    expect(await database.outbox_operations.get(opening.operation.operation_id)).toMatchObject({ status: 'permanent_failed', last_error_code: 'validation' });
++    expect(classifySyncError({ message: 'network failed' })).toMatchObject({ state: 'retryable_failed' });
++    expect(classifySyncError({ code: '42501' })).toMatchObject({ state: 'permanent_failed' });
++  });
++
++  it('invalidates a stale account continuation before it mutates a new account partition', async () => {
++    const database = await freshDatabase();
++    await database.products.put({ id: 'p', user_id: USER_A, name: 'Product' });
++    await initializeStock({ userId: USER_A, productId: 'p', quantity: '1' }, database);
++    let resolveRpc;
++    const delayed = new Promise((resolve) => { resolveRpc = resolve; });
++    const client = mockClient({ rpc: async () => delayed });
++    const runner = createV2SyncRunner({ client, database });
++    const run = runner.sync(USER_A);
++    runner.invalidate();
++    resolveRpc({ data: { status: 'accepted', movement: { id: 'ignored', product_id: 'p', user_id: USER_A, qty_change: '1', server_sequence: 1 }, balance_after: '1', revision_after: 1 }, error: null });
++    expect(await run).toMatchObject({ cancelled: true });
++    expect((await database.inventory_movements.where('id').equals('ignored').count())).toBe(0);
++  });
++});
+
+diff --git a/tests/integration/v2-rpc.integration.test.js b/tests/integration/v2-rpc.integration.test.js
+index 3cf2d93..dd0f53c 100644
+--- a/tests/integration/v2-rpc.integration.test.js
++++ b/tests/integration/v2-rpc.integration.test.js
+@@ -2,7 +2,11 @@ import { execFileSync } from 'node:child_process';
+ import { randomUUID } from 'node:crypto';
+ import pg from 'pg';
+ import { createClient } from '@supabase/supabase-js';
++import 'fake-indexeddb/auto';
+ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
++import { createDatabase } from '../../src/lib/db.js';
++import { initializeStock } from '../../src/lib/inventoryLocal.js';
++import { createV2SyncRunner } from '../../src/lib/v2Sync.js';
+ 
+ const USER_A = '11111111-1111-4111-8111-111111111111';
+ const USER_B = '22222222-2222-4222-8222-222222222222';
+@@ -184,6 +188,37 @@ describe('local V2 inventory migration, RPC, and RLS foundation', () => {
+     await client.auth.signOut();
+   });
+ 
++  it('syncs an offline local opening through the authenticated browser RPC path', async () => {
++    const env = localSupabaseEnv();
++    const client = createClient(env.API_URL, env.ANON_KEY, { auth: { persistSession: false } });
++    const email = `v2-c2-${randomUUID()}@example.test`;
++    const password = 'local-test-password';
++    expect((await client.auth.signUp({ email, password })).error).toBeNull();
++    await client.auth.signOut();
++    const login = await client.auth.signInWithPassword({ email, password });
++    expect(login.error).toBeNull();
++    const remoteProduct = await client.from('products').insert({
++      id: randomUUID(), name: 'C2 local opening', wholesale_price: 1, selling_price: 2, user_id: login.data.user.id,
++    }).select().single();
++    expect(remoteProduct.error).toBeNull();
++    const database = createDatabase(`c2-local-${randomUUID()}`);
++    await database.open();
++    try {
++      await database.products.put(remoteProduct.data);
++      const local = await initializeStock({ userId: login.data.user.id, productId: remoteProduct.data.id, quantity: '2.125' }, database);
++      const runner = createV2SyncRunner({ client, database });
++      await runner.sync(login.data.user.id);
++      expect(await database.outbox_operations.get(local.operation.operation_id)).toMatchObject({ status: 'succeeded', reconciled_at: expect.any(String) });
++      expect(await database.inventory_balances.get(remoteProduct.data.id)).toMatchObject({ server_quantity: '2.125000', server_revision: 1 });
++      const remoteMovement = await client.from('stock_movements').select('id').eq('id', local.operation.operation_id);
++      expect(remoteMovement.data).toHaveLength(1);
++    } finally {
++      database.close();
++      await database.delete();
++      await client.auth.signOut();
++    }
++  });
++
+   it('creates an explicit zero opening balance and retains six-decimal quantities', async () => {
+     const zeroProduct = await createProduct(USER_A, 'zero');
+     const decimalProduct = await createProduct(USER_A, 'decimal');
+
+diff --git a/docs/v2/03B-C2-REMOTE-SYNC-IMPLEMENTATION.md b/docs/v2/03B-C2-REMOTE-SYNC-IMPLEMENTATION.md
+new file mode 100644
+index 0000000..8313f87
+--- /dev/null
++++ b/docs/v2/03B-C2-REMOTE-SYNC-IMPLEMENTATION.md
+@@ -0,0 +1,39 @@
++# Step 3B-C2 — Remote Sync Implementation
++
++**Confirmed from implementation:** `src/lib/v2Sync.js` is a separate V2 data-layer runner. It is deliberately not wired into `SyncContext` or the product/inventory UI yet; V1 `syncManager` continues to own the existing `sync_queue` runtime until C3 lifecycle migration.
++
++## Runner and account boundary
++
++`createV2SyncRunner({ client, database, getActiveUserId })` requires an explicit `userId`. It verifies the current authenticated session before remote work and before applying a remote response. A per-runner generation token invalidates stale work after logout/account switch; a process-local per-user promise prevents overlapping V2 runs. No V2 query, outbox selection, or local merge crosses `user_id` partitions.
++
++## Outbox processing
++
++`selectReadyOutbox()` selects only `pending` operations and due `retryable_failed` operations, ordered by durable per-user `sequence`. Dependencies must be reconciled before processing; later operations for the same entity wait behind earlier ready work. `syncing`, `succeeded`, `conflict`, `blocked`, and `permanent_failed` are not selected.
++
++The strict C1.1 state machine is used for all automatic transitions. Transient/network failures use bounded exponential retry (`next_attempt_at`); authorization and validation failures become `permanent_failed`; stock-count and metadata version conflicts become `conflict`. Operation UUIDs and payloads are never changed on retry.
++
++## RPC mapping and reconciliation
++
++Inventory `post` operations call `post_inventory_movement`; `stock_count` calls `post_stock_count`. The outbox `operation_id` is the RPC UUID. Accepted/duplicate receipts merge their canonical movement and balance, then mark the operation `succeeded` and `reconciled_at`. Projection replay only includes unresolved `pending`, `syncing`, and `retryable_failed` intent.
++
++Stock-count `conflict` is retained for review and never recalculated automatically. A returned `no_change` has no server movement receipt and is marked reconciled only when its response is received. If that response is lost, a retry that conflicts after later remote activity remains a reviewable conflict; C2 does not claim that the no-op was durable.
++
++Metadata operations use `update_product_metadata`; archive operations use `archive_product`. On stale metadata response C2 pulls the canonical product and compares only the original whitelisted patch fields. If each intended field is already canonical the operation is resolved; otherwise it remains a conflict. `wholesale_price` and `cost_price` are untouched.
++
++## Pull, cursor, and local projection
++
++Pulls are RLS-scoped to the active user for products, categories, balances, and non-legacy movements. The movement cursor is `sync_state.id = v2:movement_cursor:<userId>`. A Dexie transaction merges movement rows, outbox reconciliation markers, and advances the cursor only after the batch is durably stored. The cursor relies on the approved per-user server-sequence invariant; it is not treated as globally commit-ordered.
++
++Remote balances populate `server_quantity`, `server_revision`, and `server_initialized`. `recomputeProduct()` replays unresolved local operations over that canonical base. Absence of a remote balance does not erase a pending local opening; a product with neither is still **Stock not set**.
++
++## Categories and legacy bridge
++
++New V2 category outbox actions use the existing authenticated category browser API with simple owner-scoped last-write-wins behavior. A successful category delete is followed by a user-scoped product pull, allowing the remote `ON DELETE SET NULL` category effect to replace stale local references.
++
++`bridgeLegacyQueue()` never deletes legacy `sync_queue` rows. It proves ownership from `data.user_id` or a matching owned local product/category. Proven category CRUD is bridged once and marked locally; unsupported product mutations and ambiguous ownership produce a local blocked marker and remain unsubmitted. This is intentionally conservative rather than inventing historical intent.
++
++## C3 handoff
++
++C3 must wire runner lifecycle, online/offline triggers, and sync status into `SyncContext`, replace legacy runtime processing only after migration coverage, add staged image sequencing, surface conflicts/blocked work, and implement bounded outbox cleanup scheduling.
++
++The pre-production hardening item from C1 remains: the server drift diagnostic must additionally compare canonical movement/balance ownership to `products.user_id` before production deployment.
+
+diff --git a/docs/v2/03-DATA-AND-OFFLINE-FOUNDATION.md b/docs/v2/03-DATA-AND-OFFLINE-FOUNDATION.md
+--- a/docs/v2/03-DATA-AND-OFFLINE-FOUNDATION.md
++++ b/docs/v2/03-DATA-AND-OFFLINE-FOUNDATION.md
+@@
+-Dexie V3 retains every V1 `sync_queue` row unchanged. The schema upgrade does not assign it to whichever account happens to be logged in, because upgrade can occur before reliable Auth context exists. C2 may bridge a row only after proving ownership from its payload or the matching owned local product/category record; ambiguous or unowned legacy work becomes `blocked`, never reassigned. V1 queue processing remains active until C2 deliberately replaces it.
++Dexie V3 retains every V1 `sync_queue` row unchanged. The schema upgrade does not assign it to whichever account happens to be logged in, because upgrade can occur before reliable Auth context exists. C2 bridges only proven category CRUD; unsupported product mutations and ambiguous/unowned rows receive a local `blocked` marker and remain unsubmitted. C2 is a separate data-layer runner; the existing V1 runtime remains active until C3 explicitly wires the replacement lifecycle, preventing two engines from processing the same bridged operation.
+@@
+-  C --> D[Upload new image object if needed]
+-  D --> E[Post metadata/category/archive RPC or REST operation]
+-  E --> F[Post inventory/count RPC with stable UUID]
++  C --> E[Post metadata/category/archive RPC or REST operation]
++  E --> F[Post inventory/count RPC with stable UUID]
+@@
+-3. Push ready operations in deterministic local sequence, respecting dependencies. Coalesce only safe mutable metadata operations for the same product *before* their first attempt; never coalesce inventory movement/count operations.
++3. Push ready operations in deterministic local sequence, respecting dependencies. C2 does not coalesce business operations; image staging/dependency sequencing is C3 work. Never coalesce inventory movement/count operations.
+

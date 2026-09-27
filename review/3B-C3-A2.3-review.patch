@@ -1,0 +1,118 @@
+diff --git a/tests/unit/sync-context.test.jsx b/tests/unit/sync-context.test.jsx
+new file mode 100644
+index 0000000..172e1a1
+--- /dev/null
++++ b/tests/unit/sync-context.test.jsx
+@@ -0,0 +1,112 @@
++import { act, render, waitFor } from '@testing-library/react';
++import { beforeEach, describe, expect, it, vi } from 'vitest';
++import React, { useEffect } from 'react';
++
++const mocks = vi.hoisted(() => ({
++  user: { id: 'a' }, events: [], fullSync: vi.fn(), legacyPending: vi.fn(), recover: vi.fn(), cleanup: vi.fn(),
++  v2Sync: vi.fn(), v2Status: vi.fn(), getState: vi.fn(), putState: vi.fn(), getSession: vi.fn(), invalidate: vi.fn(),
++}));
++
++vi.mock('../../src/context/AuthContext', () => ({ useAuth: () => ({ user: mocks.user }) }));
++vi.mock('../../src/lib/syncManager', () => ({ fullSync: (...args) => mocks.fullSync(...args), getLegacyPendingCount: (...args) => mocks.legacyPending(...args) }));
++vi.mock('../../src/lib/outbox', () => ({ recoverAbandonedSyncing: (...args) => mocks.recover(...args), cleanupSucceededOutbox: (...args) => mocks.cleanup(...args) }));
++vi.mock('../../src/lib/v2Sync', () => ({ createV2SyncRunner: () => ({ invalidate: mocks.invalidate, sync: (...args) => mocks.v2Sync(...args) }), getV2SyncStatus: (...args) => mocks.v2Status(...args) }));
++vi.mock('../../src/lib/supabase', () => ({ supabase: { auth: { getSession: (...args) => mocks.getSession(...args) } } }));
++vi.mock('../../src/lib/db', () => ({ dbReady: Promise.resolve(), db: { sync_state: { get: (...args) => mocks.getState(...args), put: (...args) => mocks.putState(...args) } } }));
++
++import { SyncProvider, useSync } from '../../src/context/SyncContext';
++
++const deferred = () => {
++  let resolve;
++  const promise = new Promise((done) => { resolve = done; });
++  return { promise, resolve };
++};
++const status = (pending) => ({ pending, retryable_failed: 0, conflict: 0, blocked: 0, permanent_failed: 0 });
++
++function Probe() {
++  const sync = useSync();
++  useEffect(() => {
++    if (sync.syncVersion === 0 && sync.legacyPending === 7 && sync.pending === 8 && sync.lastSuccessfulSync === 'A-success') mocks.events.push('status applied');
++    if (sync.syncVersion === 1) mocks.events.push('version incremented');
++  }, [sync.legacyPending, sync.pending, sync.lastSuccessfulSync, sync.syncVersion]);
++  return <button onClick={sync.handleSync}>{JSON.stringify({ legacy: sync.legacyPending, pending: sync.pending, last: sync.lastSuccessfulSync, version: sync.syncVersion })}</button>;
++}
++
++describe('SyncContext lifecycle gates', () => {
++  beforeEach(() => {
++    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
++    mocks.user = { id: 'a' }; mocks.events.length = 0; vi.clearAllMocks();
++    mocks.fullSync.mockImplementation(async () => { mocks.events.push('V1 fullSync'); });
++    mocks.recover.mockImplementation(async () => { mocks.events.push('recoverAbandonedSyncing'); });
++    mocks.v2Sync.mockImplementation(async () => { mocks.events.push('V2 sync'); return {}; });
++    mocks.cleanup.mockImplementation(async () => { mocks.events.push('cleanupSucceededOutbox'); });
++    mocks.putState.mockImplementation(async () => { mocks.events.push('lifecycle success timestamp persistence'); });
++    mocks.legacyPending.mockResolvedValue(0); mocks.v2Status.mockResolvedValue(status(0)); mocks.getState.mockResolvedValue(null);
++    mocks.getSession.mockImplementation(async () => ({ data: { session: { user: mocks.user } } }));
++  });
++
++  async function renderReady() {
++    const view = render(<SyncProvider><Probe /></SyncProvider>);
++    await waitFor(() => expect(mocks.legacyPending).toHaveBeenCalledWith('a'));
++    vi.clearAllMocks(); mocks.events.length = 0;
++    return view;
++  }
++  async function startLifecycle(view) {
++    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
++    act(() => { view.container.querySelector('button').click(); });
++  }
++
++  it('does not finish a lifecycle when V2 reports cancellation', async () => {
++    const view = await renderReady(); mocks.v2Sync.mockResolvedValueOnce({ cancelled: true });
++    await startLifecycle(view);
++    await waitFor(() => expect(mocks.v2Sync).toHaveBeenCalledWith('a'));
++    expect(mocks.cleanup).not.toHaveBeenCalled();
++    expect(mocks.putState).not.toHaveBeenCalled();
++    expect(mocks.legacyPending).not.toHaveBeenCalled();
++    expect(view.container.querySelector('button')).toHaveTextContent('"version":0');
++  });
++
++  it('does not apply stale scoped status reads after switching accounts', async () => {
++    const view = await renderReady();
++    const aLegacy = deferred(), aStatus = deferred(), aSuccess = deferred();
++    mocks.legacyPending.mockImplementation((id) => id === 'a' ? aLegacy.promise : Promise.resolve(2));
++    mocks.v2Status.mockImplementation((id) => id === 'a' ? aStatus.promise : Promise.resolve(status(3)));
++    mocks.getState.mockImplementation((id) => id.includes(':a') ? aSuccess.promise : Promise.resolve({ value: 'B-success' }));
++    await startLifecycle(view);
++    await waitFor(() => expect(mocks.legacyPending).toHaveBeenCalledWith('a'));
++    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
++    mocks.user = { id: 'b' }; view.rerender(<SyncProvider><Probe /></SyncProvider>);
++    await waitFor(() => expect(mocks.legacyPending).toHaveBeenCalledWith('b'));
++    aLegacy.resolve(7); aStatus.resolve(status(8)); aSuccess.resolve({ value: 'A-success' });
++    await waitFor(() => expect(view.container.querySelector('button')).toHaveTextContent('"last":"B-success"'));
++    expect(view.container.querySelector('button')).toHaveTextContent('"legacy":2');
++    expect(view.container.querySelector('button')).toHaveTextContent('"pending":3');
++    expect(view.container.querySelector('button')).toHaveTextContent('"version":0');
++  });
++
++  it('runs a successful lifecycle in the exact observable order', async () => {
++    const view = await renderReady();
++    mocks.legacyPending.mockResolvedValueOnce(7); mocks.v2Status.mockResolvedValueOnce(status(8)); mocks.getState.mockResolvedValueOnce({ value: 'A-success' });
++    await startLifecycle(view);
++    await waitFor(() => expect(view.container.querySelector('button')).toHaveTextContent('"version":1'));
++    expect(mocks.events).toEqual(['V1 fullSync', 'recoverAbandonedSyncing', 'V2 sync', 'cleanupSucceededOutbox', 'lifecycle success timestamp persistence', 'status applied', 'version incremented']);
++  });
++
++  it('does not apply User A status or version after timestamp persistence and an auth switch', async () => {
++    const view = await renderReady();
++    const aLegacy = deferred(), aStatus = deferred(), aSuccess = deferred();
++    mocks.legacyPending.mockImplementation((id) => id === 'a' ? aLegacy.promise : Promise.resolve(2));
++    mocks.v2Status.mockImplementation((id) => id === 'a' ? aStatus.promise : Promise.resolve(status(3)));
++    mocks.getState.mockImplementation((id) => id.includes(':a') ? aSuccess.promise : Promise.resolve({ value: 'B-success' }));
++    await startLifecycle(view);
++    await waitFor(() => expect(mocks.putState).toHaveBeenCalledWith(expect.objectContaining({ user_id: 'a' })));
++    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
++    mocks.user = { id: 'b' }; view.rerender(<SyncProvider><Probe /></SyncProvider>);
++    await waitFor(() => expect(mocks.legacyPending).toHaveBeenCalledWith('b'));
++    aLegacy.resolve(7); aStatus.resolve(status(8)); aSuccess.resolve({ value: 'A-success' });
++    await waitFor(() => expect(view.container.querySelector('button')).toHaveTextContent('"last":"B-success"'));
++    expect(view.container.querySelector('button')).toHaveTextContent('"legacy":2');
++    expect(view.container.querySelector('button')).toHaveTextContent('"pending":3');
++    expect(view.container.querySelector('button')).toHaveTextContent('"version":0');
++  });
++});

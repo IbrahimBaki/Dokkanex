@@ -9,6 +9,8 @@ import SearchBar from '../components/SearchBar'
 import CategoryFilter from '../components/CategoryFilter'
 import ConfirmDialog from '../components/ConfirmDialog'
 import ExportModal from '../components/ExportModal'
+import InitializeStockDialog from '../components/InitializeStockDialog'
+import { getUserInventoryBalanceMap } from '../lib/inventoryLocal'
 
 function Spinner() {
   return (
@@ -27,6 +29,7 @@ export default function ProductsPage() {
   const { user } = useAuth()
   const { syncVersion, syncing } = useSync()
   const [products, setProducts] = useState([])
+  const [balanceMap, setBalanceMap] = useState(new Map())
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -40,6 +43,7 @@ export default function ProductsPage() {
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [showExport, setShowExport] = useState(false)
+  const [initializeProduct, setInitializeProduct] = useState(null)
   const [page, setPage] = useState(1)
   const ITEMS_PER_PAGE = 100
 
@@ -72,7 +76,7 @@ export default function ProductsPage() {
 
   async function fetchAll() {
     setLoading(true)
-    await Promise.all([fetchProducts(), fetchCategories()])
+    await Promise.all([fetchProducts(), fetchCategories(), fetchBalances()])
     setLoading(false)
   }
 
@@ -92,6 +96,19 @@ export default function ProductsPage() {
     } catch (e) {
       console.error('fetchCategories error', e)
     }
+  }
+
+  async function fetchBalances() {
+    try {
+      setBalanceMap(await getUserInventoryBalanceMap(user.id))
+    } catch (e) {
+      setError(t('products.failedToLoad', { error: e.message }))
+    }
+  }
+
+  function handleInitialized(balance) {
+    setBalanceMap(previous => new Map(previous).set(balance.product_id, balance))
+    setInitializeProduct(null)
   }
 
   async function handleDelete() {
@@ -247,6 +264,8 @@ export default function ProductsPage() {
               product={product}
               categoryName={categoryMap[product.category_id]?.name}
               categoryId={product.category_id}
+              balance={balanceMap.get(product.id)}
+              onInitialize={setInitializeProduct}
               onEdit={p => navigate(`/edit/${p.id}`)}
               onDelete={p => setToDelete(p)}
               selectionMode={selectionMode}
@@ -263,6 +282,8 @@ export default function ProductsPage() {
               product={product}
               categoryName={categoryMap[product.category_id]?.name}
               categoryId={product.category_id}
+              balance={balanceMap.get(product.id)}
+              onInitialize={setInitializeProduct}
               onEdit={p => navigate(`/edit/${p.id}`)}
               onDelete={p => setToDelete(p)}
               view="list"
@@ -346,6 +367,15 @@ export default function ProductsPage() {
         onCancel={() => setToDelete(null)}
         loading={deleting}
       />
+
+      {initializeProduct && (
+        <InitializeStockDialog
+          product={initializeProduct}
+          userId={user.id}
+          onInitialized={handleInitialized}
+          onClose={() => setInitializeProduct(null)}
+        />
+      )}
 
       {/* Export floating bar */}
       {selectionMode && selectedIds.size > 0 && (

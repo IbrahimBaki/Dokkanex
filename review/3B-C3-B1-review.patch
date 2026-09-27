@@ -1,0 +1,369 @@
+diff --git a/src/context/SyncContext.jsx b/src/context/SyncContext.jsx
+index 0b6c0cd..26d0f7b 100755
+--- a/src/context/SyncContext.jsx
++++ b/src/context/SyncContext.jsx
+@@ -1,6 +1,11 @@
+ import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+-import { fullSync, getPendingCount, getLastSync } from '../lib/syncManager';
+-import { dbReady } from '../lib/db';
++import { fullSync, getLegacyPendingCount } from '../lib/syncManager';
++import { db, dbReady } from '../lib/db';
++import { supabase } from '../lib/supabase';
++import { createV2SyncRunner, getV2SyncStatus } from '../lib/v2Sync';
++import { cleanupSucceededOutbox, recoverAbandonedSyncing } from '../lib/outbox';
++import { createSyncLifecycleCoordinator } from '../lib/syncLifecycle';
++import { acquireV2SyncLease, releaseV2SyncLease } from '../lib/v2SyncLock';
+ import { useAuth } from './AuthContext';
+ 
+ const SyncContext = createContext({});
+@@ -10,28 +15,75 @@ export function SyncProvider({ children }) {
+   const [syncing, setSyncing] = useState(false);
+   const [pendingCount, setPendingCount] = useState(0);
+   const [lastSync, setLastSync] = useState(null);
++  const [v2Status, setV2Status] = useState({ pending: 0, retryable_failed: 0, conflict: 0, blocked: 0, permanent_failed: 0 });
+   const [isOnline, setIsOnline] = useState(navigator.onLine);
+   const [syncVersion, setSyncVersion] = useState(0);
+-  const syncingRef = useRef(false);
++  const generationRef = useRef(0);
++  const runnerRef = useRef(null);
++  const coordinatorRef = useRef(null);
++  if (!runnerRef.current) runnerRef.current = createV2SyncRunner({ client: supabase, database: db, legacyBridgeMode: 'disabled' });
+ 
+-  const refreshMeta = useCallback(async () => {
+-    setPendingCount(await getPendingCount());
+-    setLastSync(await getLastSync());
+-  }, []);
++  const refreshMeta = useCallback(async (userId = user?.id, isCurrent) => {
++    if (!userId) return;
++    const [legacyPending, status, success] = await Promise.all([
++      getLegacyPendingCount(userId), getV2SyncStatus(userId, db), db.sync_state.get(`v2:lifecycle_last_success:${userId}`),
++    ]);
++    const current = isCurrent ?? (async () => {
++      const { data } = await supabase.auth.getSession();
++      return data.session?.user?.id === userId;
++    });
++    if (!await current()) return;
++    setPendingCount(legacyPending);
++    setV2Status(status);
++    setLastSync(success?.value ?? null);
++  }, [user?.id]);
+ 
+-  const handleSync = useCallback(async () => {
+-    if (!user || syncingRef.current || !navigator.onLine) return;
+-    syncingRef.current = true;
++  const executeLifecycle = useCallback(async (userId, coordinatorCurrent) => {
++    const generation = generationRef.current;
++    const isCurrent = async () => {
++      const { data } = await supabase.auth.getSession();
++      return coordinatorCurrent() && generation === generationRef.current && data.session?.user?.id === userId;
++    };
+     setSyncing(true);
+     try {
+-      await fullSync(user.id);
+-      await refreshMeta();
++      await fullSync(userId, { isCurrent });
++      if (!await isCurrent()) return { cancelled: true };
++      const lease = await acquireV2SyncLease(userId, db);
++      if (!lease.acquired) return { busy: true };
++      try {
++        await recoverAbandonedSyncing(userId, {}, db);
++        if (!await isCurrent()) return { cancelled: true };
++        const v2Result = await runnerRef.current.sync(userId);
++        if (v2Result?.cancelled || !await isCurrent()) return { cancelled: true };
++        await cleanupSucceededOutbox(userId, { keepRecent: 50 }, db).catch(() => {});
++        if (!await isCurrent()) return { cancelled: true };
++      } finally {
++        await releaseV2SyncLease(userId, lease.token, db);
++      }
++      const successAt = new Date().toISOString();
++      await db.sync_state.put({ id: `v2:lifecycle_last_success:${userId}`, user_id: userId, scope: 'lifecycle_last_success', value: successAt, updated_at: successAt });
++      if (!await isCurrent()) return { cancelled: true };
++      await refreshMeta(userId, isCurrent);
++      if (!await isCurrent()) return { cancelled: true };
+       setSyncVersion(v => v + 1);
++      return { succeeded: true };
+     } finally {
+-      syncingRef.current = false;
+       setSyncing(false);
+     }
+-  }, [user, refreshMeta]);
++  }, [refreshMeta]);
++
++  if (!coordinatorRef.current) coordinatorRef.current = createSyncLifecycleCoordinator({ run: executeLifecycle, isOnline: () => navigator.onLine });
++  const handleSync = useCallback(() => coordinatorRef.current.request(user?.id), [user?.id]);
++
++  useEffect(() => {
++    generationRef.current += 1;
++    runnerRef.current?.invalidate();
++    coordinatorRef.current?.invalidate({ clearRequest: !user });
++    setSyncing(false);
++    setPendingCount(0);
++    setLastSync(null);
++    setV2Status({ pending: 0, retryable_failed: 0, conflict: 0, blocked: 0, permanent_failed: 0 });
++  }, [user?.id]);
+ 
+   useEffect(() => {
+     if (!user) return;
+@@ -58,7 +110,7 @@ export function SyncProvider({ children }) {
+   }, [user, handleSync]);
+ 
+   return (
+-    <SyncContext.Provider value={{ syncing, pendingCount, lastSync, isOnline, handleSync, refreshMeta, syncVersion }}>
++    <SyncContext.Provider value={{ syncing, isSyncing: syncing, pendingCount, legacyPending: pendingCount, lastSync, lastSuccessfulSync: lastSync, isOnline, handleSync, refreshMeta, syncVersion, ...v2Status }}>
+       {children}
+     </SyncContext.Provider>
+   );
+diff --git a/src/lib/v2SyncLock.js b/src/lib/v2SyncLock.js
+new file mode 100644
+index 0000000..b9912a5
+--- /dev/null
++++ b/src/lib/v2SyncLock.js
+@@ -0,0 +1,23 @@
++const leaseId = (userId) => `v2:sync_lease:${userId}`;
++const token = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
++
++export async function acquireV2SyncLease(userId, database, { now = Date.now(), ttlMs = 60_000 } = {}) {
++  const id = leaseId(userId);
++  const owner = token();
++  return database.transaction('rw', database.sync_state, async () => {
++    const existing = await database.sync_state.get(id);
++    if (existing?.value?.expires_at > now) return { acquired: false, busy: true };
++    await database.sync_state.put({ id, user_id: userId, scope: 'sync_lease', value: { token: owner, expires_at: now + ttlMs }, updated_at: new Date(now).toISOString() });
++    return { acquired: true, token: owner };
++  });
++}
++
++export async function releaseV2SyncLease(userId, owner, database) {
++  const id = leaseId(userId);
++  return database.transaction('rw', database.sync_state, async () => {
++    const existing = await database.sync_state.get(id);
++    if (existing?.value?.token !== owner) return false;
++    await database.sync_state.delete(id);
++    return true;
++  });
++}
+diff --git a/tests/unit/sync-context.test.jsx b/tests/unit/sync-context.test.jsx
+new file mode 100644
+index 0000000..e50ca72
+--- /dev/null
++++ b/tests/unit/sync-context.test.jsx
+@@ -0,0 +1,165 @@
++import { act, render, waitFor } from '@testing-library/react';
++import { beforeEach, describe, expect, it, vi } from 'vitest';
++import React, { useEffect } from 'react';
++
++const mocks = vi.hoisted(() => ({
++  user: { id: 'a' }, events: [], fullSync: vi.fn(), legacyPending: vi.fn(), recover: vi.fn(), cleanup: vi.fn(),
++  v2Sync: vi.fn(), v2Status: vi.fn(), getState: vi.fn(), putState: vi.fn(), getSession: vi.fn(), invalidate: vi.fn(),
++  acquireLease: vi.fn(), releaseLease: vi.fn(),
++}));
++
++vi.mock('../../src/context/AuthContext', () => ({ useAuth: () => ({ user: mocks.user }) }));
++vi.mock('../../src/lib/syncManager', () => ({ fullSync: (...args) => mocks.fullSync(...args), getLegacyPendingCount: (...args) => mocks.legacyPending(...args) }));
++vi.mock('../../src/lib/outbox', () => ({ recoverAbandonedSyncing: (...args) => mocks.recover(...args), cleanupSucceededOutbox: (...args) => mocks.cleanup(...args) }));
++vi.mock('../../src/lib/v2Sync', () => ({ createV2SyncRunner: () => ({ invalidate: mocks.invalidate, sync: (...args) => mocks.v2Sync(...args) }), getV2SyncStatus: (...args) => mocks.v2Status(...args) }));
++vi.mock('../../src/lib/v2SyncLock', () => ({ acquireV2SyncLease: (...args) => mocks.acquireLease(...args), releaseV2SyncLease: (...args) => mocks.releaseLease(...args) }));
++vi.mock('../../src/lib/supabase', () => ({ supabase: { auth: { getSession: (...args) => mocks.getSession(...args) } } }));
++vi.mock('../../src/lib/db', () => ({ dbReady: Promise.resolve(), db: { sync_state: { get: (...args) => mocks.getState(...args), put: (...args) => mocks.putState(...args) } } }));
++
++import { SyncProvider, useSync } from '../../src/context/SyncContext';
++
++const deferred = () => {
++  let resolve;
++  const promise = new Promise((done) => { resolve = done; });
++  return { promise, resolve };
++};
++const status = (pending) => ({ pending, retryable_failed: 0, conflict: 0, blocked: 0, permanent_failed: 0 });
++
++function Probe() {
++  const sync = useSync();
++  useEffect(() => {
++    if (sync.syncVersion === 0 && sync.legacyPending === 7 && sync.pending === 8 && sync.lastSuccessfulSync === 'A-success') mocks.events.push('status applied');
++    if (sync.syncVersion === 1) mocks.events.push('version incremented');
++  }, [sync.legacyPending, sync.pending, sync.lastSuccessfulSync, sync.syncVersion]);
++  return <><button onClick={sync.handleSync}>{JSON.stringify({ legacy: sync.legacyPending, pending: sync.pending, retryable: sync.retryable_failed, conflict: sync.conflict, blocked: sync.blocked, permanent: sync.permanent_failed, last: sync.lastSuccessfulSync, version: sync.syncVersion })}</button><button aria-label="refresh" onClick={() => sync.refreshMeta()}>refresh</button></>;
++}
++
++describe('SyncContext lifecycle gates', () => {
++  beforeEach(() => {
++    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
++    mocks.user = { id: 'a' }; mocks.events.length = 0; vi.clearAllMocks();
++    mocks.fullSync.mockImplementation(async () => { mocks.events.push('V1 fullSync'); });
++    mocks.recover.mockImplementation(async () => { mocks.events.push('recoverAbandonedSyncing'); });
++    mocks.v2Sync.mockImplementation(async () => { mocks.events.push('V2 sync'); return {}; });
++    mocks.cleanup.mockImplementation(async () => { mocks.events.push('cleanupSucceededOutbox'); });
++    mocks.putState.mockImplementation(async () => { mocks.events.push('lifecycle success timestamp persistence'); });
++    mocks.legacyPending.mockResolvedValue(0); mocks.v2Status.mockResolvedValue(status(0)); mocks.getState.mockResolvedValue(null);
++    mocks.getSession.mockImplementation(async () => ({ data: { session: { user: mocks.user } } }));
++    mocks.acquireLease.mockResolvedValue({ acquired: true, token: 'lease' }); mocks.releaseLease.mockResolvedValue(true);
++  });
++
++  async function renderReady() {
++    const view = render(<SyncProvider><Probe /></SyncProvider>);
++    await waitFor(() => expect(mocks.legacyPending).toHaveBeenCalledWith('a'));
++    vi.clearAllMocks(); mocks.events.length = 0;
++    return view;
++  }
++  async function startLifecycle(view) {
++    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
++    act(() => { view.container.querySelector('button').click(); });
++  }
++
++  it('does not finish a lifecycle when V2 reports cancellation', async () => {
++    const view = await renderReady(); mocks.v2Sync.mockResolvedValueOnce({ cancelled: true });
++    await startLifecycle(view);
++    await waitFor(() => expect(mocks.v2Sync).toHaveBeenCalledWith('a'));
++    expect(mocks.cleanup).not.toHaveBeenCalled();
++    expect(mocks.putState).not.toHaveBeenCalled();
++    expect(mocks.legacyPending).not.toHaveBeenCalled();
++    expect(view.container.querySelector('button')).toHaveTextContent('"version":0');
++  });
++
++  it('exposes legacy and every V2 status for only the active user', async () => {
++    mocks.legacyPending.mockImplementation(async (id) => id === 'a' ? 1 : 2);
++    mocks.v2Status.mockImplementation(async (id) => id === 'a'
++      ? { pending: 3, retryable_failed: 4, conflict: 5, blocked: 6, permanent_failed: 7 }
++      : { pending: 8, retryable_failed: 9, conflict: 10, blocked: 11, permanent_failed: 12 });
++    const view = render(<SyncProvider><Probe /></SyncProvider>);
++    await waitFor(() => expect(view.container.querySelector('button')).toHaveTextContent('"legacy":1'));
++    expect(view.container.querySelector('button')).toHaveTextContent('"retryable":4');
++    expect(view.container.querySelector('button')).toHaveTextContent('"conflict":5');
++    expect(view.container.querySelector('button')).toHaveTextContent('"blocked":6');
++    expect(view.container.querySelector('button')).toHaveTextContent('"permanent":7');
++    mocks.user = { id: 'b' }; view.rerender(<SyncProvider><Probe /></SyncProvider>);
++    await waitFor(() => expect(view.container.querySelector('button')).toHaveTextContent('"legacy":2'));
++    expect(view.container.querySelector('button')).toHaveTextContent('"pending":8');
++    expect(view.container.querySelector('button')).toHaveTextContent('"retryable":9');
++    expect(view.container.querySelector('button')).toHaveTextContent('"conflict":10');
++    expect(view.container.querySelector('button')).toHaveTextContent('"blocked":11');
++    expect(view.container.querySelector('button')).toHaveTextContent('"permanent":12');
++  });
++
++  it('does not apply an ordinary stale User A refresh after an account switch', async () => {
++    const view = await renderReady();
++    const aLegacy = deferred(), aStatus = deferred(), aSuccess = deferred();
++    mocks.legacyPending.mockImplementation((id) => id === 'a' ? aLegacy.promise : Promise.resolve(2));
++    mocks.v2Status.mockImplementation((id) => id === 'a' ? aStatus.promise : Promise.resolve(status(3)));
++    mocks.getState.mockImplementation((id) => id.includes(':a') ? aSuccess.promise : Promise.resolve({ value: 'B-success' }));
++    act(() => { view.container.querySelector('[aria-label="refresh"]').click(); });
++    await waitFor(() => expect(mocks.legacyPending).toHaveBeenCalledWith('a'));
++    mocks.user = { id: 'b' }; view.rerender(<SyncProvider><Probe /></SyncProvider>);
++    aLegacy.resolve(7); aStatus.resolve(status(8)); aSuccess.resolve({ value: 'A-success' });
++    await waitFor(() => expect(view.container.querySelector('button')).toHaveTextContent('"legacy":2'));
++    expect(view.container.querySelector('button')).not.toHaveTextContent('A-success');
++  });
++
++  it('clears every visible user-scoped status immediately on logout', async () => {
++    mocks.legacyPending.mockResolvedValue(1);
++    mocks.v2Status.mockResolvedValue({ pending: 2, retryable_failed: 3, conflict: 4, blocked: 5, permanent_failed: 6 });
++    mocks.getState.mockResolvedValue({ value: 'A-success' });
++    const view = render(<SyncProvider><Probe /></SyncProvider>);
++    await waitFor(() => expect(view.container.querySelector('button')).toHaveTextContent('"permanent":6'));
++    mocks.user = null; view.rerender(<SyncProvider><Probe /></SyncProvider>);
++    await waitFor(() => expect(view.container.querySelector('button')).toHaveTextContent('"legacy":0'));
++    expect(view.container.querySelector('button')).toHaveTextContent('"pending":0');
++    expect(view.container.querySelector('button')).toHaveTextContent('"retryable":0');
++    expect(view.container.querySelector('button')).toHaveTextContent('"conflict":0');
++    expect(view.container.querySelector('button')).toHaveTextContent('"blocked":0');
++    expect(view.container.querySelector('button')).toHaveTextContent('"permanent":0');
++    expect(view.container.querySelector('button')).toHaveTextContent('"last":null');
++  });
++
++  it('does not apply stale scoped status reads after switching accounts', async () => {
++    const view = await renderReady();
++    const aLegacy = deferred(), aStatus = deferred(), aSuccess = deferred();
++    mocks.legacyPending.mockImplementation((id) => id === 'a' ? aLegacy.promise : Promise.resolve(2));
++    mocks.v2Status.mockImplementation((id) => id === 'a' ? aStatus.promise : Promise.resolve(status(3)));
++    mocks.getState.mockImplementation((id) => id.includes(':a') ? aSuccess.promise : Promise.resolve({ value: 'B-success' }));
++    await startLifecycle(view);
++    await waitFor(() => expect(mocks.legacyPending).toHaveBeenCalledWith('a'));
++    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
++    mocks.user = { id: 'b' }; view.rerender(<SyncProvider><Probe /></SyncProvider>);
++    await waitFor(() => expect(mocks.legacyPending).toHaveBeenCalledWith('b'));
++    aLegacy.resolve(7); aStatus.resolve(status(8)); aSuccess.resolve({ value: 'A-success' });
++    await waitFor(() => expect(view.container.querySelector('button')).toHaveTextContent('"last":"B-success"'));
++    expect(view.container.querySelector('button')).toHaveTextContent('"legacy":2');
++    expect(view.container.querySelector('button')).toHaveTextContent('"pending":3');
++    expect(view.container.querySelector('button')).toHaveTextContent('"version":0');
++  });
++
++  it('runs a successful lifecycle in the exact observable order', async () => {
++    const view = await renderReady();
++    mocks.legacyPending.mockResolvedValueOnce(7); mocks.v2Status.mockResolvedValueOnce(status(8)); mocks.getState.mockResolvedValueOnce({ value: 'A-success' });
++    await startLifecycle(view);
++    await waitFor(() => expect(view.container.querySelector('button')).toHaveTextContent('"version":1'));
++    expect(mocks.events).toEqual(['V1 fullSync', 'recoverAbandonedSyncing', 'V2 sync', 'cleanupSucceededOutbox', 'lifecycle success timestamp persistence', 'status applied', 'version incremented']);
++  });
++
++  it('does not apply User A status or version after timestamp persistence and an auth switch', async () => {
++    const view = await renderReady();
++    const aLegacy = deferred(), aStatus = deferred(), aSuccess = deferred();
++    mocks.legacyPending.mockImplementation((id) => id === 'a' ? aLegacy.promise : Promise.resolve(2));
++    mocks.v2Status.mockImplementation((id) => id === 'a' ? aStatus.promise : Promise.resolve(status(3)));
++    mocks.getState.mockImplementation((id) => id.includes(':a') ? aSuccess.promise : Promise.resolve({ value: 'B-success' }));
++    await startLifecycle(view);
++    await waitFor(() => expect(mocks.putState).toHaveBeenCalledWith(expect.objectContaining({ user_id: 'a' })));
++    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
++    mocks.user = { id: 'b' }; view.rerender(<SyncProvider><Probe /></SyncProvider>);
++    await waitFor(() => expect(mocks.legacyPending).toHaveBeenCalledWith('b'));
++    aLegacy.resolve(7); aStatus.resolve(status(8)); aSuccess.resolve({ value: 'A-success' });
++    await waitFor(() => expect(view.container.querySelector('button')).toHaveTextContent('"last":"B-success"'));
++    expect(view.container.querySelector('button')).toHaveTextContent('"legacy":2');
++    expect(view.container.querySelector('button')).toHaveTextContent('"pending":3');
++    expect(view.container.querySelector('button')).toHaveTextContent('"version":0');
++  });
++});
+diff --git a/tests/unit/v2-sync-lock.test.js b/tests/unit/v2-sync-lock.test.js
+new file mode 100644
+index 0000000..b4f8cb4
+--- /dev/null
++++ b/tests/unit/v2-sync-lock.test.js
+@@ -0,0 +1,48 @@
++import { afterEach, describe, expect, it } from 'vitest';
++import { createDatabase } from '../../src/lib/db';
++import { acquireV2SyncLease, releaseV2SyncLease } from '../../src/lib/v2SyncLock';
++
++const databases = [];
++async function fresh() {
++  const database = createDatabase(`v2-lock-${crypto.randomUUID()}`);
++  databases.push(database); await database.open(); return database;
++}
++afterEach(async () => Promise.all(databases.splice(0).map(async (database) => { database.close(); await database.delete(); })));
++
++describe('V2 cross-context sync lease', () => {
++  it('allows only one same-user owner, then permits the next owner after release', async () => {
++    const database = await fresh();
++    const [first, second] = await Promise.all([acquireV2SyncLease('a', database), acquireV2SyncLease('a', database)]);
++    expect([first, second].filter((lease) => lease.acquired)).toHaveLength(1);
++    const owner = first.acquired ? first : second;
++    expect(first.acquired ? second : first).toEqual({ acquired: false, busy: true });
++    expect(await releaseV2SyncLease('a', owner.token, database)).toBe(true);
++    expect((await acquireV2SyncLease('a', database)).acquired).toBe(true);
++  });
++
++  it('does not block different users', async () => {
++    const database = await fresh();
++    expect((await acquireV2SyncLease('a', database)).acquired).toBe(true);
++    expect((await acquireV2SyncLease('b', database)).acquired).toBe(true);
++  });
++
++  it('recovers an expired lease and prevents a non-owner from releasing the active lease', async () => {
++    const database = await fresh();
++    const first = await acquireV2SyncLease('a', database, { now: 100, ttlMs: 10 });
++    const recovered = await acquireV2SyncLease('a', database, { now: 111, ttlMs: 10 });
++    expect(recovered.acquired).toBe(true);
++    expect(await releaseV2SyncLease('a', first.token, database)).toBe(false);
++    expect(await releaseV2SyncLease('a', recovered.token, database)).toBe(true);
++  });
++
++  it('releases after a cancelling or throwing critical-section owner', async () => {
++    const database = await fresh();
++    const run = async (work) => {
++      const lease = await acquireV2SyncLease('a', database);
++      try { return await work(); } finally { await releaseV2SyncLease('a', lease.token, database); }
++    };
++    await expect(run(async () => ({ cancelled: true }))).resolves.toEqual({ cancelled: true });
++    await expect(run(async () => { throw new Error('failed'); })).rejects.toThrow('failed');
++    expect((await acquireV2SyncLease('a', database)).acquired).toBe(true);
++  });
++});

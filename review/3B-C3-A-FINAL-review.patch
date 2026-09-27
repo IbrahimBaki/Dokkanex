@@ -1,0 +1,446 @@
+diff --git a/src/context/SyncContext.jsx b/src/context/SyncContext.jsx
+index 0b6c0cd..6feda72 100755
+--- a/src/context/SyncContext.jsx
++++ b/src/context/SyncContext.jsx
+@@ -1,6 +1,10 @@
+ import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+-import { fullSync, getPendingCount, getLastSync } from '../lib/syncManager';
+-import { dbReady } from '../lib/db';
++import { fullSync, getLegacyPendingCount } from '../lib/syncManager';
++import { db, dbReady } from '../lib/db';
++import { supabase } from '../lib/supabase';
++import { createV2SyncRunner, getV2SyncStatus } from '../lib/v2Sync';
++import { cleanupSucceededOutbox, recoverAbandonedSyncing } from '../lib/outbox';
++import { createSyncLifecycleCoordinator } from '../lib/syncLifecycle';
+ import { useAuth } from './AuthContext';
+ 
+ const SyncContext = createContext({});
+@@ -10,28 +14,69 @@ export function SyncProvider({ children }) {
+   const [syncing, setSyncing] = useState(false);
+   const [pendingCount, setPendingCount] = useState(0);
+   const [lastSync, setLastSync] = useState(null);
++  const [v2Status, setV2Status] = useState({ pending: 0, retryable_failed: 0, conflict: 0, blocked: 0, permanent_failed: 0 });
+   const [isOnline, setIsOnline] = useState(navigator.onLine);
+   const [syncVersion, setSyncVersion] = useState(0);
+-  const syncingRef = useRef(false);
++  const generationRef = useRef(0);
++  const runnerRef = useRef(null);
++  const coordinatorRef = useRef(null);
++  if (!runnerRef.current) runnerRef.current = createV2SyncRunner({ client: supabase, database: db, legacyBridgeMode: 'disabled' });
+ 
+-  const refreshMeta = useCallback(async () => {
+-    setPendingCount(await getPendingCount());
+-    setLastSync(await getLastSync());
+-  }, []);
++  const refreshMeta = useCallback(async (userId = user?.id, isCurrent) => {
++    if (!userId) return;
++    const [legacyPending, status, success] = await Promise.all([
++      getLegacyPendingCount(userId), getV2SyncStatus(userId, db), db.sync_state.get(`v2:lifecycle_last_success:${userId}`),
++    ]);
++    const current = isCurrent ?? (async () => {
++      const { data } = await supabase.auth.getSession();
++      return data.session?.user?.id === userId;
++    });
++    if (!await current()) return;
++    setPendingCount(legacyPending);
++    setV2Status(status);
++    setLastSync(success?.value ?? null);
++  }, [user?.id]);
+ 
+-  const handleSync = useCallback(async () => {
+-    if (!user || syncingRef.current || !navigator.onLine) return;
+-    syncingRef.current = true;
++  const executeLifecycle = useCallback(async (userId, coordinatorCurrent) => {
++    const generation = generationRef.current;
++    const isCurrent = async () => {
++      const { data } = await supabase.auth.getSession();
++      return coordinatorCurrent() && generation === generationRef.current && data.session?.user?.id === userId;
++    };
+     setSyncing(true);
+     try {
+-      await fullSync(user.id);
+-      await refreshMeta();
++      await fullSync(userId, { isCurrent });
++      if (!await isCurrent()) return { cancelled: true };
++      await recoverAbandonedSyncing(userId, {}, db);
++      if (!await isCurrent()) return { cancelled: true };
++      const v2Result = await runnerRef.current.sync(userId);
++      if (v2Result?.cancelled || !await isCurrent()) return { cancelled: true };
++      await cleanupSucceededOutbox(userId, { keepRecent: 50 }, db).catch(() => {});
++      if (!await isCurrent()) return { cancelled: true };
++      const successAt = new Date().toISOString();
++      await db.sync_state.put({ id: `v2:lifecycle_last_success:${userId}`, user_id: userId, scope: 'lifecycle_last_success', value: successAt, updated_at: successAt });
++      if (!await isCurrent()) return { cancelled: true };
++      await refreshMeta(userId, isCurrent);
++      if (!await isCurrent()) return { cancelled: true };
+       setSyncVersion(v => v + 1);
++      return { succeeded: true };
+     } finally {
+-      syncingRef.current = false;
+       setSyncing(false);
+     }
+-  }, [user, refreshMeta]);
++  }, [refreshMeta]);
++
++  if (!coordinatorRef.current) coordinatorRef.current = createSyncLifecycleCoordinator({ run: executeLifecycle, isOnline: () => navigator.onLine });
++  const handleSync = useCallback(() => coordinatorRef.current.request(user?.id), [user?.id]);
++
++  useEffect(() => {
++    generationRef.current += 1;
++    runnerRef.current?.invalidate();
++    coordinatorRef.current?.invalidate({ clearRequest: !user });
++    setSyncing(false);
++    setPendingCount(0);
++    setLastSync(null);
++    setV2Status({ pending: 0, retryable_failed: 0, conflict: 0, blocked: 0, permanent_failed: 0 });
++  }, [user?.id]);
+ 
+   useEffect(() => {
+     if (!user) return;
+@@ -58,7 +103,7 @@ export function SyncProvider({ children }) {
+   }, [user, handleSync]);
+ 
+   return (
+-    <SyncContext.Provider value={{ syncing, pendingCount, lastSync, isOnline, handleSync, refreshMeta, syncVersion }}>
++    <SyncContext.Provider value={{ syncing, isSyncing: syncing, pendingCount, legacyPending: pendingCount, lastSync, lastSuccessfulSync: lastSync, isOnline, handleSync, refreshMeta, syncVersion, ...v2Status }}>
+       {children}
+     </SyncContext.Provider>
+   );
+diff --git a/src/lib/syncManager.js b/src/lib/syncManager.js
+index b2ae138..6aae535 100755
+--- a/src/lib/syncManager.js
++++ b/src/lib/syncManager.js
+@@ -2,7 +2,22 @@ import { db } from './db';
+ import { supabase, deleteImage } from './supabase';
+ import { uploadBase64ToSupabase } from './imageUtils';
+ 
+-export async function pullFromSupabase(userId) {
++async function ownedLegacyRow(item, userId) {
++  if (item.data?.user_id) return item.data.user_id === userId;
++  if (!item.record_id || !['products', 'categories'].includes(item.table_name)) return false;
++  const local = await db[item.table_name].get(item.record_id);
++  return local?.user_id === userId;
++}
++
++export async function getLegacyQueueForUser(userId) {
++  const eligible = [];
++  for (const item of await db.sync_queue.orderBy('id').toArray()) {
++    if (await ownedLegacyRow(item, userId)) eligible.push(item);
++  }
++  return eligible;
++}
++
++export async function pullFromSupabase(userId, { isCurrent = async () => true } = {}) {
+   const PAGE_SIZE = 1000;
+ 
+   // Categories: full replace (no local-only fields)
+@@ -20,8 +35,13 @@ export async function pullFromSupabase(userId) {
+     catFrom += PAGE_SIZE;
+   }
+ 
+-  await db.categories.clear();
+-  if (allCatData.length > 0) await db.categories.bulkPut(allCatData);
++  if (!await isCurrent()) return { cancelled: true };
++  await db.transaction('rw', db.categories, db.sync_queue, async () => {
++    const ids = new Set(allCatData.map((row) => row.id));
++    for (const row of allCatData) await db.categories.put(row);
++    const pending = new Set((await getLegacyQueueForUser(userId)).filter((row) => row.table_name === 'categories' && row.operation !== 'DELETE').map((row) => row.record_id));
++    for (const local of await db.categories.where('user_id').equals(userId).toArray()) if (!ids.has(local.id) && !pending.has(local.id)) await db.categories.delete(local.id);
++  });
+ 
+   // Products: merge carefully — preserve pending local records (e.g. image_base64 not yet uploaded)
+   let allProdData = [];
+@@ -38,12 +58,9 @@ export async function pullFromSupabase(userId) {
+     prodFrom += PAGE_SIZE;
+   }
+ 
+-  if (allProdData.length >= 0) {
++  if (allProdData.length >= 0 && await isCurrent()) {
+     // IDs that still have pending sync operations
+-    const pendingIds = new Set(
+-      (await db.sync_queue.where('table_name').equals('products').toArray())
+-        .map(q => q.record_id)
+-    );
++    const pendingIds = new Set((await getLegacyQueueForUser(userId)).filter((row) => row.table_name === 'products' && row.operation !== 'DELETE').map((row) => row.record_id));
+ 
+     // Update/insert products from Supabase that are not pending
+     const toUpdate = allProdData.filter(p => !pendingIds.has(p.id));
+@@ -51,7 +68,7 @@ export async function pullFromSupabase(userId) {
+ 
+     // Remove products deleted remotely (not pending locally)
+     const remoteIds = new Set(allProdData.map(p => p.id));
+-    const localAll = await db.products.toArray();
++    const localAll = await db.products.where('user_id').equals(userId).toArray();
+     for (const local of localAll) {
+       if (!remoteIds.has(local.id) && !pendingIds.has(local.id)) {
+         await db.products.delete(local.id);
+@@ -62,8 +79,8 @@ export async function pullFromSupabase(userId) {
+   await db.app_meta.put({ key: 'last_sync', value: new Date().toISOString() });
+ }
+ 
+-export async function pushToSupabase() {
+-  const queue = await db.sync_queue.orderBy('id').toArray();
++export async function pushToSupabase(userId, { isCurrent = async () => true } = {}) {
++  const queue = await getLegacyQueueForUser(userId);
+   if (queue.length === 0) return { pushed: 0, failed: 0 };
+ 
+   let pushed = 0;
+@@ -71,6 +88,7 @@ export async function pushToSupabase() {
+ 
+   for (const item of queue) {
+     try {
++      if (!await isCurrent()) return { pushed, failed, cancelled: true };
+       const rawData = item.data ? { ...item.data } : {};
+ 
+       // Upload pending Base64 image before INSERT or UPDATE
+@@ -115,6 +133,7 @@ export async function pushToSupabase() {
+         if (error) throw error;
+       }
+ 
++      if (!await isCurrent()) return { pushed, failed, cancelled: true };
+       await db.sync_queue.delete(item.id);
+       pushed++;
+     } catch {
+@@ -125,9 +144,10 @@ export async function pushToSupabase() {
+   return { pushed, failed };
+ }
+ 
+-export async function fullSync(userId) {
+-  const pushResult = await pushToSupabase();
+-  await pullFromSupabase(userId);
++export async function fullSync(userId, options = {}) {
++  const pushResult = await pushToSupabase(userId, options);
++  if (pushResult.cancelled) return pushResult;
++  await pullFromSupabase(userId, options);
+   return pushResult;
+ }
+ 
+@@ -145,6 +165,10 @@ export async function getPendingCount() {
+   return await db.sync_queue.count();
+ }
+ 
++export async function getLegacyPendingCount(userId) {
++  return (await getLegacyQueueForUser(userId)).length;
++}
++
+ export async function getLastSync() {
+   const meta = await db.app_meta.get('last_sync');
+   return meta?.value || null;
+diff --git a/tests/unit/sync-context.test.jsx b/tests/unit/sync-context.test.jsx
+new file mode 100644
+index 0000000..b38324b
+--- /dev/null
++++ b/tests/unit/sync-context.test.jsx
+@@ -0,0 +1,162 @@
++import { act, render, waitFor } from '@testing-library/react';
++import { beforeEach, describe, expect, it, vi } from 'vitest';
++import React, { useEffect } from 'react';
++
++const mocks = vi.hoisted(() => ({
++  user: { id: 'a' }, events: [], fullSync: vi.fn(), legacyPending: vi.fn(), recover: vi.fn(), cleanup: vi.fn(),
++  v2Sync: vi.fn(), v2Status: vi.fn(), getState: vi.fn(), putState: vi.fn(), getSession: vi.fn(), invalidate: vi.fn(),
++}));
++
++vi.mock('../../src/context/AuthContext', () => ({ useAuth: () => ({ user: mocks.user }) }));
++vi.mock('../../src/lib/syncManager', () => ({ fullSync: (...args) => mocks.fullSync(...args), getLegacyPendingCount: (...args) => mocks.legacyPending(...args) }));
++vi.mock('../../src/lib/outbox', () => ({ recoverAbandonedSyncing: (...args) => mocks.recover(...args), cleanupSucceededOutbox: (...args) => mocks.cleanup(...args) }));
++vi.mock('../../src/lib/v2Sync', () => ({ createV2SyncRunner: () => ({ invalidate: mocks.invalidate, sync: (...args) => mocks.v2Sync(...args) }), getV2SyncStatus: (...args) => mocks.v2Status(...args) }));
++vi.mock('../../src/lib/supabase', () => ({ supabase: { auth: { getSession: (...args) => mocks.getSession(...args) } } }));
++vi.mock('../../src/lib/db', () => ({ dbReady: Promise.resolve(), db: { sync_state: { get: (...args) => mocks.getState(...args), put: (...args) => mocks.putState(...args) } } }));
++
++import { SyncProvider, useSync } from '../../src/context/SyncContext';
++
++const deferred = () => {
++  let resolve;
++  const promise = new Promise((done) => { resolve = done; });
++  return { promise, resolve };
++};
++const status = (pending) => ({ pending, retryable_failed: 0, conflict: 0, blocked: 0, permanent_failed: 0 });
++
++function Probe() {
++  const sync = useSync();
++  useEffect(() => {
++    if (sync.syncVersion === 0 && sync.legacyPending === 7 && sync.pending === 8 && sync.lastSuccessfulSync === 'A-success') mocks.events.push('status applied');
++    if (sync.syncVersion === 1) mocks.events.push('version incremented');
++  }, [sync.legacyPending, sync.pending, sync.lastSuccessfulSync, sync.syncVersion]);
++  return <><button onClick={sync.handleSync}>{JSON.stringify({ legacy: sync.legacyPending, pending: sync.pending, retryable: sync.retryable_failed, conflict: sync.conflict, blocked: sync.blocked, permanent: sync.permanent_failed, last: sync.lastSuccessfulSync, version: sync.syncVersion })}</button><button aria-label="refresh" onClick={() => sync.refreshMeta()}>refresh</button></>;
++}
++
++describe('SyncContext lifecycle gates', () => {
++  beforeEach(() => {
++    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
++    mocks.user = { id: 'a' }; mocks.events.length = 0; vi.clearAllMocks();
++    mocks.fullSync.mockImplementation(async () => { mocks.events.push('V1 fullSync'); });
++    mocks.recover.mockImplementation(async () => { mocks.events.push('recoverAbandonedSyncing'); });
++    mocks.v2Sync.mockImplementation(async () => { mocks.events.push('V2 sync'); return {}; });
++    mocks.cleanup.mockImplementation(async () => { mocks.events.push('cleanupSucceededOutbox'); });
++    mocks.putState.mockImplementation(async () => { mocks.events.push('lifecycle success timestamp persistence'); });
++    mocks.legacyPending.mockResolvedValue(0); mocks.v2Status.mockResolvedValue(status(0)); mocks.getState.mockResolvedValue(null);
++    mocks.getSession.mockImplementation(async () => ({ data: { session: { user: mocks.user } } }));
++  });
++
++  async function renderReady() {
++    const view = render(<SyncProvider><Probe /></SyncProvider>);
++    await waitFor(() => expect(mocks.legacyPending).toHaveBeenCalledWith('a'));
++    vi.clearAllMocks(); mocks.events.length = 0;
++    return view;
++  }
++  async function startLifecycle(view) {
++    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
++    act(() => { view.container.querySelector('button').click(); });
++  }
++
++  it('does not finish a lifecycle when V2 reports cancellation', async () => {
++    const view = await renderReady(); mocks.v2Sync.mockResolvedValueOnce({ cancelled: true });
++    await startLifecycle(view);
++    await waitFor(() => expect(mocks.v2Sync).toHaveBeenCalledWith('a'));
++    expect(mocks.cleanup).not.toHaveBeenCalled();
++    expect(mocks.putState).not.toHaveBeenCalled();
++    expect(mocks.legacyPending).not.toHaveBeenCalled();
++    expect(view.container.querySelector('button')).toHaveTextContent('"version":0');
++  });
++
++  it('exposes legacy and every V2 status for only the active user', async () => {
++    mocks.legacyPending.mockImplementation(async (id) => id === 'a' ? 1 : 2);
++    mocks.v2Status.mockImplementation(async (id) => id === 'a'
++      ? { pending: 3, retryable_failed: 4, conflict: 5, blocked: 6, permanent_failed: 7 }
++      : { pending: 8, retryable_failed: 9, conflict: 10, blocked: 11, permanent_failed: 12 });
++    const view = render(<SyncProvider><Probe /></SyncProvider>);
++    await waitFor(() => expect(view.container.querySelector('button')).toHaveTextContent('"legacy":1'));
++    expect(view.container.querySelector('button')).toHaveTextContent('"retryable":4');
++    expect(view.container.querySelector('button')).toHaveTextContent('"conflict":5');
++    expect(view.container.querySelector('button')).toHaveTextContent('"blocked":6');
++    expect(view.container.querySelector('button')).toHaveTextContent('"permanent":7');
++    mocks.user = { id: 'b' }; view.rerender(<SyncProvider><Probe /></SyncProvider>);
++    await waitFor(() => expect(view.container.querySelector('button')).toHaveTextContent('"legacy":2'));
++    expect(view.container.querySelector('button')).toHaveTextContent('"pending":8');
++    expect(view.container.querySelector('button')).toHaveTextContent('"retryable":9');
++    expect(view.container.querySelector('button')).toHaveTextContent('"conflict":10');
++    expect(view.container.querySelector('button')).toHaveTextContent('"blocked":11');
++    expect(view.container.querySelector('button')).toHaveTextContent('"permanent":12');
++  });
++
++  it('does not apply an ordinary stale User A refresh after an account switch', async () => {
++    const view = await renderReady();
++    const aLegacy = deferred(), aStatus = deferred(), aSuccess = deferred();
++    mocks.legacyPending.mockImplementation((id) => id === 'a' ? aLegacy.promise : Promise.resolve(2));
++    mocks.v2Status.mockImplementation((id) => id === 'a' ? aStatus.promise : Promise.resolve(status(3)));
++    mocks.getState.mockImplementation((id) => id.includes(':a') ? aSuccess.promise : Promise.resolve({ value: 'B-success' }));
++    act(() => { view.container.querySelector('[aria-label="refresh"]').click(); });
++    await waitFor(() => expect(mocks.legacyPending).toHaveBeenCalledWith('a'));
++    mocks.user = { id: 'b' }; view.rerender(<SyncProvider><Probe /></SyncProvider>);
++    aLegacy.resolve(7); aStatus.resolve(status(8)); aSuccess.resolve({ value: 'A-success' });
++    await waitFor(() => expect(view.container.querySelector('button')).toHaveTextContent('"legacy":2'));
++    expect(view.container.querySelector('button')).not.toHaveTextContent('A-success');
++  });
++
++  it('clears every visible user-scoped status immediately on logout', async () => {
++    mocks.legacyPending.mockResolvedValue(1);
++    mocks.v2Status.mockResolvedValue({ pending: 2, retryable_failed: 3, conflict: 4, blocked: 5, permanent_failed: 6 });
++    mocks.getState.mockResolvedValue({ value: 'A-success' });
++    const view = render(<SyncProvider><Probe /></SyncProvider>);
++    await waitFor(() => expect(view.container.querySelector('button')).toHaveTextContent('"permanent":6'));
++    mocks.user = null; view.rerender(<SyncProvider><Probe /></SyncProvider>);
++    await waitFor(() => expect(view.container.querySelector('button')).toHaveTextContent('"legacy":0'));
++    expect(view.container.querySelector('button')).toHaveTextContent('"pending":0');
++    expect(view.container.querySelector('button')).toHaveTextContent('"retryable":0');
++    expect(view.container.querySelector('button')).toHaveTextContent('"conflict":0');
++    expect(view.container.querySelector('button')).toHaveTextContent('"blocked":0');
++    expect(view.container.querySelector('button')).toHaveTextContent('"permanent":0');
++    expect(view.container.querySelector('button')).toHaveTextContent('"last":null');
++  });
++
++  it('does not apply stale scoped status reads after switching accounts', async () => {
++    const view = await renderReady();
++    const aLegacy = deferred(), aStatus = deferred(), aSuccess = deferred();
++    mocks.legacyPending.mockImplementation((id) => id === 'a' ? aLegacy.promise : Promise.resolve(2));
++    mocks.v2Status.mockImplementation((id) => id === 'a' ? aStatus.promise : Promise.resolve(status(3)));
++    mocks.getState.mockImplementation((id) => id.includes(':a') ? aSuccess.promise : Promise.resolve({ value: 'B-success' }));
++    await startLifecycle(view);
++    await waitFor(() => expect(mocks.legacyPending).toHaveBeenCalledWith('a'));
++    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
++    mocks.user = { id: 'b' }; view.rerender(<SyncProvider><Probe /></SyncProvider>);
++    await waitFor(() => expect(mocks.legacyPending).toHaveBeenCalledWith('b'));
++    aLegacy.resolve(7); aStatus.resolve(status(8)); aSuccess.resolve({ value: 'A-success' });
++    await waitFor(() => expect(view.container.querySelector('button')).toHaveTextContent('"last":"B-success"'));
++    expect(view.container.querySelector('button')).toHaveTextContent('"legacy":2');
++    expect(view.container.querySelector('button')).toHaveTextContent('"pending":3');
++    expect(view.container.querySelector('button')).toHaveTextContent('"version":0');
++  });
++
++  it('runs a successful lifecycle in the exact observable order', async () => {
++    const view = await renderReady();
++    mocks.legacyPending.mockResolvedValueOnce(7); mocks.v2Status.mockResolvedValueOnce(status(8)); mocks.getState.mockResolvedValueOnce({ value: 'A-success' });
++    await startLifecycle(view);
++    await waitFor(() => expect(view.container.querySelector('button')).toHaveTextContent('"version":1'));
++    expect(mocks.events).toEqual(['V1 fullSync', 'recoverAbandonedSyncing', 'V2 sync', 'cleanupSucceededOutbox', 'lifecycle success timestamp persistence', 'status applied', 'version incremented']);
++  });
++
++  it('does not apply User A status or version after timestamp persistence and an auth switch', async () => {
++    const view = await renderReady();
++    const aLegacy = deferred(), aStatus = deferred(), aSuccess = deferred();
++    mocks.legacyPending.mockImplementation((id) => id === 'a' ? aLegacy.promise : Promise.resolve(2));
++    mocks.v2Status.mockImplementation((id) => id === 'a' ? aStatus.promise : Promise.resolve(status(3)));
++    mocks.getState.mockImplementation((id) => id.includes(':a') ? aSuccess.promise : Promise.resolve({ value: 'B-success' }));
++    await startLifecycle(view);
++    await waitFor(() => expect(mocks.putState).toHaveBeenCalledWith(expect.objectContaining({ user_id: 'a' })));
++    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
++    mocks.user = { id: 'b' }; view.rerender(<SyncProvider><Probe /></SyncProvider>);
++    await waitFor(() => expect(mocks.legacyPending).toHaveBeenCalledWith('b'));
++    aLegacy.resolve(7); aStatus.resolve(status(8)); aSuccess.resolve({ value: 'A-success' });
++    await waitFor(() => expect(view.container.querySelector('button')).toHaveTextContent('"last":"B-success"'));
++    expect(view.container.querySelector('button')).toHaveTextContent('"legacy":2');
++    expect(view.container.querySelector('button')).toHaveTextContent('"pending":3');
++    expect(view.container.querySelector('button')).toHaveTextContent('"version":0');
++  });
++});
+diff --git a/tests/unit/sync-manager-ownership.test.js b/tests/unit/sync-manager-ownership.test.js
+new file mode 100644
+index 0000000..497ca83
+--- /dev/null
++++ b/tests/unit/sync-manager-ownership.test.js
+@@ -0,0 +1,44 @@
++import { beforeEach, describe, expect, it, vi } from 'vitest';
++import { db, dbReady } from '../../src/lib/db';
++import { getLegacyPendingCount, pullFromSupabase, pushToSupabase } from '../../src/lib/syncManager';
++import { supabase } from '../../src/lib/supabase';
++
++describe('V1 legacy queue ownership', () => {
++  beforeEach(async () => {
++    await dbReady;
++    await Promise.all(db.tables.map((table) => table.clear()));
++  });
++
++  it('never pushes User B or ambiguous queue work while syncing User A', async () => {
++    await db.products.put({ id: 'b-product', user_id: 'user-b', name: 'B product' });
++    await db.sync_queue.bulkAdd([
++      { table_name: 'products', operation: 'UPDATE', record_id: 'b-product', data: { user_id: 'user-b', name: 'B update' }, created_at: 'old' },
++      { table_name: 'products', operation: 'UPDATE', record_id: 'unknown-product', data: {}, created_at: 'old' },
++    ]);
++    const from = vi.spyOn(supabase, 'from');
++
++    await expect(pushToSupabase('user-a')).resolves.toEqual({ pushed: 0, failed: 0 });
++
++    expect(from).not.toHaveBeenCalled();
++    expect(await getLegacyPendingCount('user-a')).toBe(0);
++    expect(await getLegacyPendingCount('user-b')).toBe(1);
++    expect(await db.sync_queue.count()).toBe(2);
++  });
++
++  it('preserves User A pending catalog records and User B records during a direct User A V1 pull', async () => {
++    await db.products.bulkPut([{ id: 'a-product', user_id: 'user-a', name: 'A draft' }, { id: 'b-product', user_id: 'user-b', name: 'B product' }]);
++    await db.categories.bulkPut([{ id: 'a-category', user_id: 'user-a', name: 'A draft category' }, { id: 'b-category', user_id: 'user-b', name: 'B category' }]);
++    await db.sync_queue.bulkAdd([
++      { table_name: 'products', operation: 'UPDATE', record_id: 'a-product', data: { user_id: 'user-a' }, created_at: 'old' },
++      { table_name: 'categories', operation: 'UPDATE', record_id: 'a-category', data: { user_id: 'user-a' }, created_at: 'old' },
++    ]);
++    vi.spyOn(supabase, 'from').mockImplementation(() => ({ select: () => ({ eq: () => ({ range: async () => ({ data: [], error: null }) }) }) }));
++
++    await pullFromSupabase('user-a');
++
++    expect(await db.products.get('a-product')).toMatchObject({ user_id: 'user-a' });
++    expect(await db.categories.get('a-category')).toMatchObject({ user_id: 'user-a' });
++    expect(await db.products.get('b-product')).toMatchObject({ user_id: 'user-b' });
++    expect(await db.categories.get('b-category')).toMatchObject({ user_id: 'user-b' });
++  });
++});

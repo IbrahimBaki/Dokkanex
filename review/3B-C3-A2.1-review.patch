@@ -1,0 +1,128 @@
+diff --git a/src/context/SyncContext.jsx b/src/context/SyncContext.jsx
+index 0b6c0cd..0db9db3 100755
+--- a/src/context/SyncContext.jsx
++++ b/src/context/SyncContext.jsx
+@@ -1,6 +1,10 @@
+ import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+-import { fullSync, getPendingCount, getLastSync } from '../lib/syncManager';
+-import { dbReady } from '../lib/db';
++import { fullSync, getLegacyPendingCount } from '../lib/syncManager';
++import { db, dbReady } from '../lib/db';
++import { supabase } from '../lib/supabase';
++import { createV2SyncRunner, getV2SyncStatus } from '../lib/v2Sync';
++import { cleanupSucceededOutbox, recoverAbandonedSyncing } from '../lib/outbox';
++import { createSyncLifecycleCoordinator } from '../lib/syncLifecycle';
+ import { useAuth } from './AuthContext';
+ 
+ const SyncContext = createContext({});
+@@ -10,28 +14,56 @@ export function SyncProvider({ children }) {
+   const [syncing, setSyncing] = useState(false);
+   const [pendingCount, setPendingCount] = useState(0);
+   const [lastSync, setLastSync] = useState(null);
++  const [v2Status, setV2Status] = useState({ pending: 0, retryable_failed: 0, conflict: 0, blocked: 0, permanent_failed: 0 });
+   const [isOnline, setIsOnline] = useState(navigator.onLine);
+   const [syncVersion, setSyncVersion] = useState(0);
+-  const syncingRef = useRef(false);
++  const generationRef = useRef(0);
++  const runnerRef = useRef(null);
++  const coordinatorRef = useRef(null);
++  if (!runnerRef.current) runnerRef.current = createV2SyncRunner({ client: supabase, database: db, legacyBridgeMode: 'disabled' });
+ 
+-  const refreshMeta = useCallback(async () => {
+-    setPendingCount(await getPendingCount());
+-    setLastSync(await getLastSync());
+-  }, []);
++  const refreshMeta = useCallback(async (userId = user?.id) => {
++    if (!userId) return;
++    setPendingCount(await getLegacyPendingCount(userId));
++    setV2Status(await getV2SyncStatus(userId, db));
++    setLastSync((await db.sync_state.get(`v2:lifecycle_last_success:${userId}`))?.value ?? null);
++  }, [user?.id]);
+ 
+-  const handleSync = useCallback(async () => {
+-    if (!user || syncingRef.current || !navigator.onLine) return;
+-    syncingRef.current = true;
++  const executeLifecycle = useCallback(async (userId, coordinatorCurrent) => {
++    const generation = generationRef.current;
++    const isCurrent = async () => {
++      const { data } = await supabase.auth.getSession();
++      return coordinatorCurrent() && generation === generationRef.current && data.session?.user?.id === userId;
++    };
+     setSyncing(true);
+     try {
+-      await fullSync(user.id);
+-      await refreshMeta();
++      await fullSync(userId, { isCurrent });
++      if (!await isCurrent()) return { cancelled: true };
++      await recoverAbandonedSyncing(userId, {}, db);
++      if (!await isCurrent()) return { cancelled: true };
++      const v2Result = await runnerRef.current.sync(userId);
++      if (v2Result?.cancelled || !await isCurrent()) return { cancelled: true };
++      await cleanupSucceededOutbox(userId, { keepRecent: 50 }, db).catch(() => {});
++      if (!await isCurrent()) return { cancelled: true };
++      const successAt = new Date().toISOString();
++      await db.sync_state.put({ id: `v2:lifecycle_last_success:${userId}`, user_id: userId, scope: 'lifecycle_last_success', value: successAt, updated_at: successAt });
++      await refreshMeta(userId);
+       setSyncVersion(v => v + 1);
++      return { succeeded: true };
+     } finally {
+-      syncingRef.current = false;
+       setSyncing(false);
+     }
+-  }, [user, refreshMeta]);
++  }, [refreshMeta]);
++
++  if (!coordinatorRef.current) coordinatorRef.current = createSyncLifecycleCoordinator({ run: executeLifecycle, isOnline: () => navigator.onLine });
++  const handleSync = useCallback(() => coordinatorRef.current.request(user?.id), [user?.id]);
++
++  useEffect(() => {
++    generationRef.current += 1;
++    runnerRef.current?.invalidate();
++    coordinatorRef.current?.invalidate();
++    if (!user) { setSyncing(false); setPendingCount(0); setLastSync(null); }
++  }, [user?.id]);
+ 
+   useEffect(() => {
+     if (!user) return;
+@@ -58,7 +90,7 @@ export function SyncProvider({ children }) {
+   }, [user, handleSync]);
+ 
+   return (
+-    <SyncContext.Provider value={{ syncing, pendingCount, lastSync, isOnline, handleSync, refreshMeta, syncVersion }}>
++    <SyncContext.Provider value={{ syncing, isSyncing: syncing, pendingCount, legacyPending: pendingCount, lastSync, lastSuccessfulSync: lastSync, isOnline, handleSync, refreshMeta, syncVersion, ...v2Status }}>
+       {children}
+     </SyncContext.Provider>
+   );
+diff --git a/src/lib/syncLifecycle.js b/src/lib/syncLifecycle.js
+new file mode 100644
+index 0000000..bcf4212
+--- /dev/null
++++ b/src/lib/syncLifecycle.js
+@@ -0,0 +1,27 @@
++// In-memory coordinator: AuthContext remains the only source of user identity.
++export function createSyncLifecycleCoordinator({ run, isOnline = () => true }) {
++  let active = null;
++  let requestedUserId = null;
++  let generation = 0;
++  let runId = 0;
++  let rerunRequested = false;
++  const request = (userId) => {
++    requestedUserId = userId ?? null;
++    if (!userId || !isOnline()) return active ?? Promise.resolve({ skipped: true });
++    if (active) { rerunRequested = true; return active; }
++    const id = ++runId;
++    const expectedGeneration = generation;
++    active = (async () => {
++      const result = await run(userId, () => generation === expectedGeneration && requestedUserId === userId);
++      return result;
++    })().finally(() => {
++      if (runId === id) active = null;
++      const next = requestedUserId;
++      const rerun = rerunRequested;
++      rerunRequested = false;
++      if (next && rerun && isOnline()) queueMicrotask(() => request(next));
++    });
++    return active;
++  };
++  return { request, invalidate() { generation += 1; }, get active() { return active; } };
++}

@@ -1,0 +1,93 @@
+diff --git a/src/lib/v2Sync.js b/src/lib/v2Sync.js
+index e9633c6..34a07b8 100644
+--- a/src/lib/v2Sync.js
++++ b/src/lib/v2Sync.js
+@@ -145,6 +145,18 @@ async function pushCategory(client, operation) {
+   return client.from('categories').delete().eq('id', operation.entity_id).select();
+ }
+ 
++async function reconcileDuplicateCategoryCreate(userId, operation, client, database) {
++  const remote = await client.from('categories').select('*').eq('id', operation.entity_id).single();
++  if (remote.error || !remote.data || remote.data.user_id !== userId) return false;
++  await database.transaction('rw', database.categories, database.outbox_operations, async () => {
++    await database.categories.put({ ...remote.data, user_id: userId });
++    await database.outbox_operations.update(operation.operation_id, {
++      status: 'succeeded', server_receipt: { status: 'accepted', category: remote.data, recovered_duplicate: true }, reconciled_at: nowIso(), updated_at: nowIso(),
++    });
++  });
++  return true;
++}
++
+ async function pushOperation(userId, operation, { client, database, isCurrent }) {
+   if (!await isCurrent()) return { cancelled: true };
+   const syncing = await transitionOutboxOperation(operation.operation_id, 'syncing', {}, database);
+@@ -199,6 +211,14 @@ async function pushOperation(userId, operation, { client, database, isCurrent })
+     return { pushed: true };
+   } catch (error) {
+     if (!await isCurrent()) return { cancelled: true };
++    if (operation.entity_type === 'inventory_movement' && operation.payload?.movement_type === 'opening' && error?.code === '23505') {
++      await transitionOutboxOperation(operation.operation_id, 'conflict', { last_error_code: 'inventory_already_initialized', last_error_message: 'Inventory was initialized remotely' }, database);
++      return { conflict: true };
++    }
++    if (operation.entity_type === 'category' && operation.action === 'create' && error?.code === '23505') {
++      if (!await isCurrent()) return { cancelled: true };
++      if (await reconcileDuplicateCategoryCreate(userId, operation, client, database)) return { pushed: true, recovered_duplicate: true };
++    }
+     const classification = classifySyncError(error);
+     const failed = await transitionOutboxOperation(operation.operation_id, classification.state, { last_error_code: classification.code, last_error_message: safeMessage(error) }, database);
+     if (classification.state === 'retryable_failed') await database.outbox_operations.update(operation.operation_id, { next_attempt_at: retryAt(failed.attempt_count) });
+@@ -225,6 +245,7 @@ export async function pullUserState(userId, { client, database = defaultDb, isCu
+     if (row.table_name !== 'products' || !row.record_id || row.v2_bridge_status === 'bridged') continue;
+     if ((await proveLegacyQueueOwnership(row, userId, database)).proven) legacyProductIds.add(row.record_id);
+   }
++  if (!await isCurrent()) return;
+   await database.transaction('rw', database.products, database.categories, database.inventory_balances, database.inventory_movements, database.outbox_operations, database.sync_state, async () => {
+     const unresolved = await database.outbox_operations.where('user_id').equals(userId).toArray();
+     const pendingProductIds = new Set(unresolved
+diff --git a/tests/unit/v2-sync.test.js b/tests/unit/v2-sync.test.js
+index 5485f1f..58e333a 100644
+--- a/tests/unit/v2-sync.test.js
++++ b/tests/unit/v2-sync.test.js
+@@ -170,4 +170,41 @@ describe('V2 remote sync runner', () => {
+     expect(await cleanupSucceededOutbox(USER_A, { keepRecent: 0 }, database)).toBe(0);
+     expect(await database.outbox_operations.get(parent.operation_id)).toBeTruthy();
+   });
++
++  it('turns a remotely initialized opening SQLSTATE 23505 into reviewable conflict instead of retrying', async () => {
++    const database = await freshDatabase();
++    await database.products.put({ id: 'p', user_id: USER_A, name: 'Product' });
++    const opening = await initializeStock({ userId: USER_A, productId: 'p', quantity: '1' }, database);
++    const client = mockClient({ rpc: async () => ({ error: { code: '23505', message: 'stock is already initialized' } }) });
++    await createV2SyncRunner({ client, database }).sync(USER_A);
++    expect(await database.outbox_operations.get(opening.operation.operation_id)).toMatchObject({ status: 'conflict', last_error_code: 'inventory_already_initialized' });
++  });
++
++  it('recovers a duplicate category create from the owner-visible canonical category instead of retrying', async () => {
++    const database = await freshDatabase();
++    const category = { id: 'c', user_id: USER_A, name: 'Tools' };
++    const operation = await createOutboxOperation({ operation_id: 'category-create', user_id: USER_A, entity_type: 'category', action: 'create', entity_id: 'c', payload: category }, database);
++    const client = mockClient({ rpc: async () => ({ data: null, error: null }), tables: { products: [], categories: [category], inventory_balances: [], stock_movements: [] } });
++    client.from = (table) => {
++      if (table === 'categories') return {
++        insert: () => ({ select: () => ({ single: async () => ({ data: null, error: { code: '23505', message: 'duplicate key' } }) }) }),
++        select: () => query([category]),
++      };
++      return { select: () => query([]) };
++    };
++    await createV2SyncRunner({ client, database }).sync(USER_A);
++    expect(await database.outbox_operations.get(operation.operation_id)).toMatchObject({ status: 'succeeded', reconciled_at: expect.any(String), server_receipt: { recovered_duplicate: true } });
++    expect(await database.categories.get('c')).toMatchObject(category);
++  });
++
++  it('does not advance the movement cursor when canonical merge fails', async () => {
++    const database = await freshDatabase();
++    const remoteMovement = { id: 'm', user_id: USER_A, product_id: 'p', movement_type: 'opening', qty_change: '1', server_sequence: 3 };
++    const client = mockClient({ tables: { products: [], categories: [], inventory_balances: [], stock_movements: [remoteMovement] } });
++    const originalPut = database.inventory_movements.put.bind(database.inventory_movements);
++    database.inventory_movements.put = async () => { throw new Error('simulated merge failure'); };
++    await expect(pullUserState(USER_A, { client, database })).rejects.toThrow('simulated merge failure');
++    database.inventory_movements.put = originalPut;
++    expect(await database.sync_state.get(`v2:movement_cursor:${USER_A}`)).toBeUndefined();
++  });
+ });
+

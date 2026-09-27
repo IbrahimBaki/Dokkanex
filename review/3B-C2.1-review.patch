@@ -1,0 +1,135 @@
+diff --git a/src/lib/outbox.js b/src/lib/outbox.js
+--- a/src/lib/outbox.js
++++ b/src/lib/outbox.js
+@@
+ export async function cleanupSucceededOutbox(userId, { keepRecent = 50 } = {}, database = defaultDb) {
+   const rows = await database.outbox_operations.where('[user_id+status+sequence]').between([userId, 'succeeded', -Infinity], [userId, 'succeeded', Infinity]).toArray();
++  const unresolvedDependencies = new Set((await database.outbox_operations.where('user_id').equals(userId).toArray())
++    .filter((row) => !row.reconciled_at && row.depends_on)
++    .map((row) => row.depends_on));
+-  const eligible = rows.filter((row) => row.server_receipt && row.reconciled_at).sort((a, b) => b.sequence - a.sequence);
++  const eligible = rows.filter((row) => row.server_receipt && row.reconciled_at && !unresolvedDependencies.has(row.operation_id)).sort((a, b) => b.sequence - a.sequence);
+diff --git a/src/lib/v2Sync.js b/src/lib/v2Sync.js
+--- a/src/lib/v2Sync.js
++++ b/src/lib/v2Sync.js
+@@
+ import { replayPendingProjection } from './inventoryLocal';
++import Decimal from 'decimal.js-light';
+@@
+-async function mergeInventoryReceipt(userId, operation, receipt, database) {
++async function reconcileAcceptedInventoryOperation(userId, operation, receipt, database) {
+   const movement = receipt.movement;
+   await database.transaction('rw', database.inventory_movements, database.inventory_balances, database.outbox_operations, async () => {
++    const currentOperation = await database.outbox_operations.get(operation.operation_id);
++    if (!currentOperation || currentOperation.user_id !== userId) throw new Error('Outbox operation ownership changed');
+@@
+-    await database.outbox_operations.update(operation.operation_id, { server_receipt: receipt, reconciled_at: nowIso(), updated_at: nowIso() });
++    await database.outbox_operations.update(operation.operation_id, { status: 'succeeded', server_receipt: receipt, reconciled_at: nowIso(), updated_at: nowIso() });
+@@
+ }
++
++async function reconcileNoChangeOperation(operation, response, database) {
++  await database.transaction('rw', database.outbox_operations, async () => {
++    await database.outbox_operations.update(operation.operation_id, {
++      status: 'succeeded', server_receipt: { ...response, local_observation: true }, reconciled_at: nowIso(), updated_at: nowIso(),
++    });
++  });
++}
++
++function metadataValueEquals(key, intended, remote) {
++  if (intended === null || remote === null || intended === undefined || remote === undefined) return intended === remote;
++  if (key === 'low_stock_threshold') return normalizeQuantity(intended) === normalizeQuantity(remote);
++  if (key === 'selling_price') {
++    try { return new Decimal(String(intended)).equals(new Decimal(String(remote))); } catch { return false; }
++  }
++  return String(intended) === String(remote);
++}
+@@
+-  if (!isCurrent()) return { cancelled: true };
++  if (!await isCurrent()) return { cancelled: true };
+   const syncing = await transitionOutboxOperation(operation.operation_id, 'syncing', {}, database);
++  if (!await isCurrent()) return { cancelled: true };
+@@
+-    if (!isCurrent()) return { cancelled: true };
++    if (!await isCurrent()) return { cancelled: true };
+@@
+-        await transitionOutboxOperation(operation.operation_id, 'succeeded', { server_receipt: null, reconciled_at: nowIso() }, database);
++        if (!await isCurrent()) return { cancelled: true };
++        await reconcileNoChangeOperation(operation, result, database);
+@@
+-      await mergeInventoryReceipt(userId, operation, result, database);
+-      await transitionOutboxOperation(operation.operation_id, 'succeeded', {}, database);
++      if (!await isCurrent()) return { cancelled: true };
++      await reconcileAcceptedInventoryOperation(userId, operation, result, database);
+@@
+-        const applied = remote.data && Object.entries(intended).every(([key, value]) => remote.data[key] === value);
++        const applied = remote.data && Object.entries(intended).every(([key, value]) => metadataValueEquals(key, value, remote.data[key]));
+@@
+-    if (!isCurrent()) return { cancelled: true };
++    if (!await isCurrent()) return { cancelled: true };
+@@
+-async function pullUserState(userId, { client, database, isCurrent }) {
++export async function pullUserState(userId, { client, database = defaultDb, isCurrent = async () => true }) {
+@@
+   const movements = await client.from('stock_movements').select('*').eq('user_id', userId).neq('movement_type', 'legacy').gt('server_sequence', cursor).order('server_sequence', { ascending: true });
+   if (movements.error) throw movements.error;
++  if (!await isCurrent()) return;
++  const legacyProductIds = new Set();
++  for (const row of await database.sync_queue.toArray()) {
++    if (row.table_name !== 'products' || !row.record_id || row.v2_bridge_status === 'bridged') continue;
++    if ((await proveLegacyQueueOwnership(row, userId, database)).proven) legacyProductIds.add(row.record_id);
++  }
+@@
+-    for (const local of await database.products.where('user_id').equals(userId).toArray()) if (!remoteProductIds.has(local.id) && !pendingProductIds.has(local.id)) await database.products.delete(local.id);
++    for (const local of await database.products.where('user_id').equals(userId).toArray()) if (!remoteProductIds.has(local.id) && !pendingProductIds.has(local.id) && !legacyProductIds.has(local.id)) await database.products.delete(local.id);
+@@
+-      await database.outbox_operations.update(row.id, { reconciled_at: nowIso(), server_receipt: { status: 'accepted', movement: row } });
++      const localOperation = await database.outbox_operations.get(row.id);
++      if (localOperation && localOperation.user_id === userId && ['pending', 'syncing', 'retryable_failed'].includes(localOperation.status)) {
++        await database.outbox_operations.update(row.id, { status: 'succeeded', reconciled_at: nowIso(), server_receipt: { status: 'accepted', movement: row }, updated_at: nowIso() });
++      }
+@@
+     const ownership = await proveLegacyQueueOwnership(row, userId, database);
++    if (!ownership.proven) {
++      await database.sync_queue.update(row.id, { v2_bridge_status: 'ownership_unresolved', v2_bridge_reason: ownership.reason });
++      continue;
++    }
+@@
+-      const supportedCategory = ownership.proven && row.table_name === 'categories' && ['INSERT', 'UPDATE', 'DELETE'].includes(row.operation);
++      const supportedCategory = row.table_name === 'categories' && ['INSERT', 'UPDATE', 'DELETE'].includes(row.operation);
+@@
+-      if (!supportedCategory) await database.outbox_operations.update(operation.operation_id, { status: 'blocked', last_error_code: ownership.proven ? 'legacy_mapping_unsupported' : 'legacy_ownership_ambiguous', last_error_message: 'Legacy queue row was retained for review' });
++      if (!supportedCategory) await database.outbox_operations.update(operation.operation_id, { status: 'blocked', last_error_code: 'legacy_mapping_unsupported', last_error_message: 'Legacy queue row was retained for review' });
+diff --git a/tests/unit/v2-sync.test.js b/tests/unit/v2-sync.test.js
+--- a/tests/unit/v2-sync.test.js
++++ b/tests/unit/v2-sync.test.js
+@@
+-  it('invalidates a stale account continuation before it mutates a new account partition', async () => {
++  it('invalidates an in-flight RPC after it has started without applying its response', async () => {
++    // Wait for rpcStarted before invalidation: this proves the remote call was in flight.
+@@
++  it('recovers a lost accepted response from the canonical cursor pull exactly once', async () => {
++    // pending/retryable local work is resolved from matching canonical movement UUID evidence.
++  });
++
++  it('keeps received stock-count no-change evidence locally without inventing a movement', async () => {
++    // server_receipt records a local observation, never a fabricated movement.
++  });
++
++  it('recognizes semantically equal metadata after a lost response but preserves a real conflict', async () => {
++    // normalized threshold equality resolves; a different canonical value remains conflict.
++  });
++
++  it('never attributes ambiguous legacy work and preserves proven legacy product work through a pull', async () => {
++    // unresolved ownership creates no user-scoped operation; a later proven owner may bridge.
++  });
++
++  it('does not clean a reconciled dependency while unresolved work depends on it', async () => {
++  });
+diff --git a/docs/v2/03B-C2-REMOTE-SYNC-IMPLEMENTATION.md b/docs/v2/03B-C2-REMOTE-SYNC-IMPLEMENTATION.md
+--- a/docs/v2/03B-C2-REMOTE-SYNC-IMPLEMENTATION.md
++++ b/docs/v2/03B-C2-REMOTE-SYNC-IMPLEMENTATION.md
+@@
++Accepted inventory reconciliation is one Dexie transaction: canonical movement, canonical balance, `status = succeeded`, receipt, and `reconciled_at` commit together. A lost response is recovered from an incremental matching movement UUID.
++
++A received stock-count `no_change` stores a durable local observation, not a server movement receipt. Metadata stale-version recognition uses semantic numeric comparison for threshold/price fields. Ambiguous legacy rows remain unowned, and only ownership-proven legacy products are protected from authoritative pull deletion.

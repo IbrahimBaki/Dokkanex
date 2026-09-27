@@ -2,7 +2,22 @@ import { db } from './db';
 import { supabase, deleteImage } from './supabase';
 import { uploadBase64ToSupabase } from './imageUtils';
 
-export async function pullFromSupabase(userId) {
+async function ownedLegacyRow(item, userId) {
+  if (item.data?.user_id) return item.data.user_id === userId;
+  if (!item.record_id || !['products', 'categories'].includes(item.table_name)) return false;
+  const local = await db[item.table_name].get(item.record_id);
+  return local?.user_id === userId;
+}
+
+export async function getLegacyQueueForUser(userId) {
+  const eligible = [];
+  for (const item of await db.sync_queue.orderBy('id').toArray()) {
+    if (await ownedLegacyRow(item, userId)) eligible.push(item);
+  }
+  return eligible;
+}
+
+export async function pullFromSupabase(userId, { isCurrent = async () => true } = {}) {
   const PAGE_SIZE = 1000;
 
   // Categories: full replace (no local-only fields)
@@ -20,8 +35,13 @@ export async function pullFromSupabase(userId) {
     catFrom += PAGE_SIZE;
   }
 
-  await db.categories.clear();
-  if (allCatData.length > 0) await db.categories.bulkPut(allCatData);
+  if (!await isCurrent()) return { cancelled: true };
+  await db.transaction('rw', db.categories, db.products, db.sync_queue, async () => {
+    const ids = new Set(allCatData.map((row) => row.id));
+    for (const row of allCatData) await db.categories.put(row);
+    const pending = new Set((await getLegacyQueueForUser(userId)).filter((row) => row.table_name === 'categories' && row.operation !== 'DELETE').map((row) => row.record_id));
+    for (const local of await db.categories.where('user_id').equals(userId).toArray()) if (!ids.has(local.id) && !pending.has(local.id)) await db.categories.delete(local.id);
+  });
 
   // Products: merge carefully — preserve pending local records (e.g. image_base64 not yet uploaded)
   let allProdData = [];
@@ -38,12 +58,9 @@ export async function pullFromSupabase(userId) {
     prodFrom += PAGE_SIZE;
   }
 
-  if (allProdData.length >= 0) {
+  if (allProdData.length >= 0 && await isCurrent()) {
     // IDs that still have pending sync operations
-    const pendingIds = new Set(
-      (await db.sync_queue.where('table_name').equals('products').toArray())
-        .map(q => q.record_id)
-    );
+    const pendingIds = new Set((await getLegacyQueueForUser(userId)).filter((row) => row.table_name === 'products' && row.operation !== 'DELETE').map((row) => row.record_id));
 
     // Update/insert products from Supabase that are not pending
     const toUpdate = allProdData.filter(p => !pendingIds.has(p.id));
@@ -51,7 +68,7 @@ export async function pullFromSupabase(userId) {
 
     // Remove products deleted remotely (not pending locally)
     const remoteIds = new Set(allProdData.map(p => p.id));
-    const localAll = await db.products.toArray();
+    const localAll = await db.products.where('user_id').equals(userId).toArray();
     for (const local of localAll) {
       if (!remoteIds.has(local.id) && !pendingIds.has(local.id)) {
         await db.products.delete(local.id);
@@ -62,8 +79,8 @@ export async function pullFromSupabase(userId) {
   await db.app_meta.put({ key: 'last_sync', value: new Date().toISOString() });
 }
 
-export async function pushToSupabase() {
-  const queue = await db.sync_queue.orderBy('id').toArray();
+export async function pushToSupabase(userId, { isCurrent = async () => true } = {}) {
+  const queue = await getLegacyQueueForUser(userId);
   if (queue.length === 0) return { pushed: 0, failed: 0 };
 
   let pushed = 0;
@@ -71,6 +88,7 @@ export async function pushToSupabase() {
 
   for (const item of queue) {
     try {
+      if (!await isCurrent()) return { pushed, failed, cancelled: true };
       const rawData = item.data ? { ...item.data } : {};
 
       // Upload pending Base64 image before INSERT or UPDATE
@@ -115,6 +133,7 @@ export async function pushToSupabase() {
         if (error) throw error;
       }
 
+      if (!await isCurrent()) return { pushed, failed, cancelled: true };
       await db.sync_queue.delete(item.id);
       pushed++;
     } catch {
@@ -125,9 +144,14 @@ export async function pushToSupabase() {
   return { pushed, failed };
 }
 
-export async function fullSync(userId) {
-  const pushResult = await pushToSupabase();
-  await pullFromSupabase(userId);
+// Cutover boundary: historical, ownership-proven V1 rows are drained without
+// running the V1 catalog pull. New UI writes never enter this queue.
+export const drainLegacyQueue = pushToSupabase;
+
+export async function fullSync(userId, options = {}) {
+  const pushResult = await pushToSupabase(userId, options);
+  if (pushResult.cancelled) return pushResult;
+  await pullFromSupabase(userId, options);
   return pushResult;
 }
 
@@ -143,6 +167,10 @@ export async function addToQueue(table_name, operation, record_id, data) {
 
 export async function getPendingCount() {
   return await db.sync_queue.count();
+}
+
+export async function getLegacyPendingCount(userId) {
+  return (await getLegacyQueueForUser(userId)).length;
 }
 
 export async function getLastSync() {

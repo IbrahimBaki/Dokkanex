@@ -12,13 +12,20 @@ describe('current local database foundation', () => {
     await db.delete();
   });
 
-  it('retains the current V2 Dexie schema before the future inventory upgrade', async () => {
-    expect(db.verno).toBe(2);
+  it('retains V1 stores while exposing the V4 local inventory and purchase foundation', async () => {
+    expect(db.verno).toBe(4);
     expect(db.tables.map((table) => table.name).sort()).toEqual([
       'app_meta',
       'categories',
+      'image_blobs',
+      'inventory_balances',
+      'inventory_movements',
+      'outbox_operations',
       'products',
       'sync_queue',
+      'sync_state',
+      'v2_purchase_documents',
+      'v2_purchase_lines',
     ]);
   });
 
