@@ -128,3 +128,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .invoice-print tr { break-inside: avoid; page-break-inside: avoid; }
   .invoice-print footer { break-inside: avoid; page-break-inside: avoid; }
 }
+
+/* Printed document tables: center text precisely inside every row. */
+.invoice-print th,
+.invoice-print td {
+  vertical-align: middle;
+  line-height: 1.4;
+}
+.invoice-print th { height: 2.4rem; }
+.invoice-print td { min-height: 2.75rem; }
