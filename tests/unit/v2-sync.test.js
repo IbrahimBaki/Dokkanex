@@ -19,6 +19,7 @@ async function freshDatabase() {
 function query(data) {
   const chain = {
     eq: () => chain, neq: () => chain, gt: () => chain, order: () => chain,
+    range: (from, to) => query(data.slice(from, to + 1)),
     single: async () => ({ data: data[0] ?? null, error: null }),
     then: (resolve) => resolve({ data, error: null }),
   };
@@ -62,6 +63,14 @@ describe('V2 remote sync runner', () => {
     expect(await database.categories.get('a-pending-category')).toMatchObject({ user_id: USER_A });
     expect(await database.products.get('b-product')).toMatchObject({ user_id: USER_B });
     expect(await database.categories.get('b-category')).toMatchObject({ user_id: USER_B });
+  });
+
+  it('pulls every product page beyond Supabase’s 1,000-row response limit', async () => {
+    const database = await freshDatabase();
+    const products = Array.from({ length: 1001 }, (_, index) => ({ id: `product-${String(index).padStart(4, '0')}`, user_id: USER_A, name: `Product ${index}` }));
+    await pullUserState(USER_A, { client: mockClient({ tables: { products, categories: [], inventory_balances: [], stock_movements: [] } }), database });
+    expect(await database.products.where('user_id').equals(USER_A).count()).toBe(1001);
+    expect(await database.products.get('product-1000')).toMatchObject({ name: 'Product 1000' });
   });
 
   it('leaves legacy bridge operations absent by default and creates the approved bridge only when enabled', async () => {

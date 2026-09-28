@@ -8,6 +8,30 @@ import Decimal from 'decimal.js-light';
 const RUNNERS = new Map();
 const RETRY_BASE_MS = 1_000;
 const RETRY_MAX_MS = 5 * 60 * 1_000;
+const REMOTE_PAGE_SIZE = 500;
+
+// Supabase limits a single select response to 1,000 rows by default. V2 keeps a
+// complete offline mirror, so every full pull must collect all pages before merge.
+function orderForPagination(query, column) {
+  return typeof query.order === 'function' ? query.order(column, { ascending: true }) : query;
+}
+
+async function selectAllPages(buildQuery, pageSize = REMOTE_PAGE_SIZE) {
+  const rows = [];
+  for (let from = 0; ; from += pageSize) {
+    const query = buildQuery();
+    // The fallback keeps older lightweight test clients compatible; Supabase
+    // always provides range(), so production requests are always paginated.
+    const response = typeof query.range === 'function'
+      ? await query.range(from, from + pageSize - 1)
+      : await query;
+    if (response.error) throw response.error;
+    const page = response.data ?? [];
+    rows.push(...page);
+    if (typeof query.range !== 'function' || page.length < pageSize) return rows;
+  }
+}
+
 
 const stateId = (userId, scope) => `v2:${scope}:${userId}`;
 const nowIso = () => new Date().toISOString();
@@ -418,21 +442,19 @@ async function pushOperation(userId, operation, { client, database, isCurrent })
 export async function pullUserState(userId, { client, database = defaultDb, isCurrent = async () => true }) {
   if (!await isCurrent()) return;
   const [products, categories, balances, sales, saleLines, saleReturns, saleReturnLines, profile, cursorState] = await Promise.all([
-    client.from('products').select('*').eq('user_id', userId),
-    client.from('categories').select('*').eq('user_id', userId),
-    client.from('inventory_balances').select('*').eq('user_id', userId),
-    client.from('v2_sale_documents').select('*').eq('user_id', userId),
-    client.from('v2_sale_lines').select('*').eq('user_id', userId),
-    client.from('v2_sale_return_documents').select('*').eq('user_id', userId),
-    client.from('v2_sale_return_lines').select('*').eq('user_id', userId),
-    client.from('v2_shop_profiles').select('*').eq('user_id', userId),
+    selectAllPages(() => orderForPagination(client.from('products').select('*').eq('user_id', userId), 'id')),
+    selectAllPages(() => orderForPagination(client.from('categories').select('*').eq('user_id', userId), 'id')),
+    selectAllPages(() => orderForPagination(client.from('inventory_balances').select('*').eq('user_id', userId), 'product_id')),
+    selectAllPages(() => orderForPagination(client.from('v2_sale_documents').select('*').eq('user_id', userId), 'id')),
+    selectAllPages(() => orderForPagination(client.from('v2_sale_lines').select('*').eq('user_id', userId), 'id')),
+    selectAllPages(() => orderForPagination(client.from('v2_sale_return_documents').select('*').eq('user_id', userId), 'id')),
+    selectAllPages(() => orderForPagination(client.from('v2_sale_return_lines').select('*').eq('user_id', userId), 'id')),
+    selectAllPages(() => orderForPagination(client.from('v2_shop_profiles').select('*').eq('user_id', userId), 'user_id')),
     database.sync_state.get(stateId(userId, 'movement_cursor')),
   ]);
   if (!await isCurrent()) return;
-  for (const response of [products, categories, balances, sales, saleLines, saleReturns, saleReturnLines, profile]) if (response.error) throw response.error;
   const cursor = Number(cursorState?.value ?? 0);
-  const movements = await client.from('stock_movements').select('*').eq('user_id', userId).neq('movement_type', 'legacy').gt('server_sequence', cursor).order('server_sequence', { ascending: true });
-  if (movements.error) throw movements.error;
+  const movements = await selectAllPages(() => orderForPagination(client.from('stock_movements').select('*').eq('user_id', userId).neq('movement_type', 'legacy').gt('server_sequence', cursor), 'server_sequence'));
   if (!await isCurrent()) return;
   const legacyProductIds = new Set();
   for (const row of await database.sync_queue.toArray()) {
@@ -448,24 +470,24 @@ export async function pullUserState(userId, { client, database = defaultDb, isCu
     const pendingCategoryIds = new Set(unresolved
       .filter((row) => row.entity_type === 'category' && !row.reconciled_at)
       .map((row) => row.entity_id));
-    const remoteProductIds = new Set(products.data.map((row) => row.id));
-    for (const row of products.data) await mergeProduct(userId, row, database);
+    const remoteProductIds = new Set(products.map((row) => row.id));
+    for (const row of products) await mergeProduct(userId, row, database);
     for (const local of await database.products.where('user_id').equals(userId).toArray()) if (!remoteProductIds.has(local.id) && !pendingProductIds.has(local.id) && !legacyProductIds.has(local.id)) await database.products.delete(local.id);
-    const remoteCategoryIds = new Set(categories.data.map((row) => row.id));
-    for (const row of categories.data) await database.categories.put({ ...row, user_id: userId });
+    const remoteCategoryIds = new Set(categories.map((row) => row.id));
+    for (const row of categories) await database.categories.put({ ...row, user_id: userId });
     for (const local of await database.categories.where('user_id').equals(userId).toArray()) if (!remoteCategoryIds.has(local.id) && !pendingCategoryIds.has(local.id)) await database.categories.delete(local.id);
-    for (const row of sales.data) await database.v2_sale_documents.put({ ...row, user_id: userId, updated_at: row.created_at });
-    for (const row of saleLines.data) await database.v2_sale_lines.put({ ...row, user_id: userId });
-    for (const row of saleReturns.data) await database.v2_sale_return_documents.put({ ...row, user_id: userId });
-    for (const row of saleReturnLines.data) await database.v2_sale_return_lines.put({ ...row, user_id: userId });
-    if (profile.data?.[0]) await database.shop_profiles.put(profile.data[0]);
-    for (const row of balances.data) await database.inventory_balances.put({
+    for (const row of sales) await database.v2_sale_documents.put({ ...row, user_id: userId, updated_at: row.created_at });
+    for (const row of saleLines) await database.v2_sale_lines.put({ ...row, user_id: userId });
+    for (const row of saleReturns) await database.v2_sale_return_documents.put({ ...row, user_id: userId });
+    for (const row of saleReturnLines) await database.v2_sale_return_lines.put({ ...row, user_id: userId });
+    if (profile?.[0]) await database.shop_profiles.put(profile[0]);
+    for (const row of balances) await database.inventory_balances.put({
       ...(await database.inventory_balances.get(row.product_id) ?? {}), product_id: row.product_id, user_id: userId,
       server_initialized: true, server_quantity: normalizeQuantity(row.current_quantity), server_revision: Number(row.revision),
       initialized_at: row.initialized_at, last_movement_id: row.last_movement_id, updated_at: row.updated_at,
     });
     let nextCursor = cursor;
-    for (const row of movements.data) {
+    for (const row of movements) {
       await database.inventory_movements.put({ ...row, id: row.id, user_id: userId, qty_change: normalizeQuantity(row.qty_change), status: 'accepted' });
       const localOperation = await database.outbox_operations.get(row.id);
       if (localOperation && localOperation.user_id === userId && ['pending', 'syncing', 'retryable_failed'].includes(localOperation.status)) {
@@ -475,7 +497,7 @@ export async function pullUserState(userId, { client, database = defaultDb, isCu
     }
     await database.sync_state.put({ id: stateId(userId, 'movement_cursor'), user_id: userId, scope: 'movement_cursor', value: nextCursor, updated_at: nowIso() });
   });
-  const affected = new Set([...(balances.data ?? []).map((row) => row.product_id), ...(movements.data ?? []).map((row) => row.product_id)]);
+  const affected = new Set([...(balances ?? []).map((row) => row.product_id), ...movements.map((row) => row.product_id)]);
   for (const productId of affected) await recomputeProduct(userId, productId, database);
 }
 

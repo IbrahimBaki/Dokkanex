@@ -21,7 +21,7 @@ function DashboardPreview() {
 }
 
 
-const WINDOWS_DOWNLOAD = 'https://github.com/IbrahimBaki/Dokkanex/releases/latest/download/DokkanX-Setup-1.2.3.exe'
+const WINDOWS_DOWNLOAD = 'https://github.com/IbrahimBaki/Dokkanex/releases/latest/download/DokkanX-Setup-1.2.4.exe'
 
 function DesktopAndContact() {
   const [form, setForm] = useState({ name: '', email: '', message: '' })
