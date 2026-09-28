@@ -120,3 +120,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 
 @keyframes float { 0%, 100% { transform: translateY(0) rotate(0deg) } 50% { transform: translateY(-10px) rotate(-.5deg) } }
 @media (prefers-reduced-motion: reduce) { .animate-\[float_7s_ease-in-out_infinite\], .animate-pulse { animation: none !important; } }
+
+@media print {
+  @page { size: A4 portrait; margin: 12mm; }
+  .invoice-print { position: static; width: auto; min-height: 0; padding: 0; color: #0f172a; }
+  .invoice-print table { page-break-inside: auto; }
+  .invoice-print tr { break-inside: avoid; page-break-inside: avoid; }
+  .invoice-print footer { break-inside: avoid; page-break-inside: avoid; }
+}

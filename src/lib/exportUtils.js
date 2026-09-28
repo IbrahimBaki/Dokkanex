@@ -34,16 +34,19 @@ export function buildShareText(products, fields, categoryMap) {
 }
 
 // Renders a hidden div to a canvas and triggers PNG download / share
-export async function exportAsImage(products, fields, categoryMap) {
+export async function exportAsImage(products, fields, categoryMap, shopProfile = {}, options = {}) {
   const t = (k, opts) => i18n.t(k, opts)
   const lang = i18n.language
   const isRtl = lang === 'ar'
   const currency = t('imageExport.currency')
+  const shopName = shopProfile.shop_name || 'DokkanX'
+  const shopLogo = shopProfile.logo_url || '/files/logo-mark.svg'
+  const contact = [shopProfile.phone, shopProfile.address].filter(Boolean).join(' · ')
 
   const container = document.createElement('div')
   container.style.cssText = `
     position: fixed; top: -9999px; left: -9999px;
-    width: 680px; background: #f8fafc;
+    width: ${options.a4 ? '760px' : '680px'}; background: #f8fafc;
     font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
     direction: ${isRtl ? 'rtl' : 'ltr'}; text-align: ${isRtl ? 'right' : 'left'};
   `
@@ -56,11 +59,9 @@ export async function exportAsImage(products, fields, categoryMap) {
   `
   header.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;">
-      <div>
-        <div style="font-size:26px;font-weight:800;color:#ffffff;letter-spacing:-0.5px;">
-          Dokkan<span style="color:#fbbf24;">X</span>
-        </div>
-        <div style="font-size:13px;color:#c4b5fd;margin-top:4px;">${t('imageExport.productList')}</div>
+      <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+        <img src="${shopLogo}" crossorigin="anonymous" style="width:38px;height:38px;border-radius:10px;object-fit:contain;background:#ffffff;" />
+        <div style="min-width:0;"><div style="font-size:20px;font-weight:800;color:#ffffff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${shopName}</div><div style="font-size:12px;color:#ddd6fe;margin-top:3px;">${t('imageExport.productList')}${contact ? ` · ${contact}` : ''}</div></div>
       </div>
       <div style="text-align:${isRtl ? 'left' : 'right'};">
         <div style="display:inline-block;">
@@ -163,10 +164,7 @@ export async function exportAsImage(products, fields, categoryMap) {
     display:flex; align-items:center; justify-content:space-between;
   `
   footer.innerHTML = `
-    <div style="font-size:13px;font-weight:700;color:#e0e7ff;">
-      Dokkan<span style="color:#fbbf24;">X</span>
-      <span style="font-size:10px;font-weight:400;color:#6366f1;margin-${isRtl ? 'right' : 'left'}:6px;">by Baghdadi Tech</span>
-    </div>
+    <div style="font-size:11px;font-weight:700;color:#e0e7ff;">صادر عبر <span style="color:#bef264;">DokkanX</span> · نظام إدارة المتاجر</div>
     <div style="font-size:10px;color:#6366f1;">
       ${new Date().toLocaleDateString(isRtl ? 'ar-EG' : 'en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
     </div>
@@ -252,20 +250,18 @@ export function getPdfPageLayout(canvasWidth, canvasHeight, pageWidth, pageHeigh
   return pages
 }
 
-export async function exportAsPDF(products, fields, categoryMap) {
-  // Landscape A4 provides a balanced canvas for the export-card aspect ratio.
-  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" })
-  const canvas = await exportAsImage(products, fields, categoryMap)
-  const imgData = canvas.toDataURL("image/png")
-  const pageWidth = doc.internal.pageSize.getWidth()
-  const pageHeight = doc.internal.pageSize.getHeight()
-  const pages = getPdfPageLayout(canvas.width, canvas.height, pageWidth, pageHeight)
-
-  pages.forEach((page, index) => {
+export async function exportAsPDF(products, fields, categoryMap, shopProfile = {}) {
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+  const rowsPerPage = 12
+  const groups = products.length ? Array.from({ length: Math.ceil(products.length / rowsPerPage) }, (_, index) => products.slice(index * rowsPerPage, (index + 1) * rowsPerPage)) : [[]]
+  for (let index = 0; index < groups.length; index++) {
+    const canvas = await exportAsImage(groups[index], fields, categoryMap, shopProfile, { a4: true, page: index + 1, pages: groups.length })
     if (index > 0) doc.addPage()
-    doc.addImage(imgData, "PNG", page.x, page.y, page.width, page.height, "", "FAST")
-  })
-  doc.save("dokkanx-products-" + Date.now() + ".pdf")
+    const pageWidth = doc.internal.pageSize.getWidth(); const pageHeight = doc.internal.pageSize.getHeight(); const margin = 10
+    const width = pageWidth - margin * 2; const height = (canvas.height * width) / canvas.width
+    doc.addImage(canvas.toDataURL('image/png'), 'PNG', margin, margin, width, Math.min(height, pageHeight - margin * 2), '', 'FAST')
+  }
+  doc.save(`dokkanx-products-${Date.now()}.pdf`)
 }
 
 export async function shareAsText(products, fields, categoryMap) {

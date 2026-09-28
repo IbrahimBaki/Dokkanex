@@ -1,6 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { getFieldLabels, downloadImage, shareAsImage, exportAsPDF, shareAsText } from '../lib/exportUtils'
+import { useAuth } from '../context/AuthContext'
+import { getShopProfile } from '../lib/shopProfile'
 
 const ALL_FIELDS = ['name', 'category', 'selling_price', 'wholesale_price', 'updated_at']
 
@@ -15,6 +17,9 @@ function Spinner() {
 
 export default function ExportModal({ products, categoryMap, onClose }) {
   const { t } = useTranslation()
+  const { user } = useAuth()
+  const [shopProfile, setShopProfile] = useState({})
+  useEffect(() => { if (user?.id) getShopProfile(user.id).then(setShopProfile) }, [user?.id])
   const [fields, setFields] = useState(['name', 'selling_price', 'category'])
   const [busy, setBusy] = useState(null)
   const [copied, setCopied] = useState(false)
@@ -28,7 +33,7 @@ export default function ExportModal({ products, categoryMap, onClose }) {
   async function run(action, key) {
     setBusy(key)
     try {
-      await action(products, fields, categoryMap)
+      await action(products, fields, categoryMap, shopProfile)
       if (key === 'text') { setCopied(true); setTimeout(() => setCopied(false), 2000) }
     } catch (e) {
       if (e?.name !== 'AbortError') console.error(e)
