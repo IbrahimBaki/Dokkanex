@@ -17,7 +17,7 @@ export default function AddProductPage() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
         </button>
-        <h1 className="text-xl font-bold text-slate-800">{t('addProduct.title')}</h1>
+        <h1 className="page-title">{t('addProduct.title')}</h1>
       </div>
 
       <div className="card p-5">

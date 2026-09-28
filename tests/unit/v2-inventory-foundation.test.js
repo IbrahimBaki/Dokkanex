@@ -7,6 +7,7 @@ import {
   removeStock, replayPendingProjection, getLatestInventoryTail,
 } from '../../src/lib/inventoryLocal';
 import { recordPurchase } from '../../src/lib/purchasesV2';
+import { recordSale } from '../../src/lib/salesV2';
 import { recomputeProduct } from '../../src/lib/v2Sync';
 import {
   cleanupSucceededOutbox, createOutboxOperation, getProjectableOutbox,
@@ -241,6 +242,19 @@ describe('local V2 inventory commands and projection', () => {
     const purchase = await recordPurchase({ userId: USER_A, lines: [{ productId: 'purchase-follow', quantity: '3', unitCost: '1' }] }, database);
     const adjustment = await addStock({ userId: USER_A, productId: 'purchase-follow', quantity: '1' }, database);
     expect(adjustment.operation.depends_on).toBe(purchase.operation.operation_id);
+  });
+
+  it('records a sale atomically, deducts stock, and requires a fresh negative-stock confirmation', async () => {
+    const database = await freshDatabase(); await product(database, 'sale-product'); await initializeStock({ userId: USER_A, productId: 'sale-product', quantity: '3' }, database);
+    const sale = await recordSale({ userId: USER_A, lines: [{ productId: 'sale-product', quantity: '2', unitPrice: '12.5' }] }, database);
+    expect(sale).toMatchObject({ status: 'pending', document: { total_amount: '25.000000' }, lines: [{ line_total: '25.000000' }] });
+    expect((await database.inventory_balances.get('sale-product')).current_quantity).toBe('1.000000');
+    expect((await database.inventory_movements.where('product_id').equals('sale-product').toArray()).find((movement) => movement.movement_type === 'sale')).toMatchObject({ movement_type: 'sale', qty_change: '-2.000000' });
+    const warning = await recordSale({ userId: USER_A, lines: [{ productId: 'sale-product', quantity: '2', unitPrice: '1' }] }, database);
+    expect(warning).toMatchObject({ status: 'negative_confirmation_required', affected: [{ before_quantity: '1.000000', after_quantity: '-1.000000' }] });
+    expect(await database.v2_sale_documents.count()).toBe(1);
+    const committed = await recordSale({ userId: USER_A, allowNegative: true, confirmedBeforeQuantities: { 'sale-product': '1.000000' }, lines: [{ productId: 'sale-product', quantity: '2', unitPrice: '1' }] }, database);
+    expect(committed.would_be_negative).toBe(true); expect((await database.inventory_balances.get('sale-product')).current_quantity).toBe('-1.000000');
   });
 
   it('replays a pending purchase over a pulled canonical balance', async () => {

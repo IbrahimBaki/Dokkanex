@@ -104,7 +104,7 @@ export default function ProductCard({ product, categoryName, categoryId, balance
             </div>
           )}
 
-          <div className="w-14 h-14 rounded-lg overflow-hidden shrink-0 bg-slate-100">
+          <div className="relative w-14 h-14 rounded-lg overflow-hidden shrink-0 bg-slate-100">
             {imageSrc && !imgError ? (
               <img
                 src={imageSrc}
@@ -120,14 +120,10 @@ export default function ProductCard({ product, categoryName, categoryId, balance
                 </svg>
               </div>
             )}
+            {categoryName && <span className={`absolute top-1 right-1 max-w-[48px] truncate rounded-md px-1 py-0.5 text-[9px] font-bold shadow-sm ${getCategoryColor(categoryId)}`}>{categoryName}</span>}
           </div>
 
           <div className="flex-1 min-w-0">
-            {categoryName && (
-              <span className={`text-xs font-semibold px-1.5 py-0.5 rounded-full inline-block mb-0.5 ${getCategoryColor(categoryId)}`}>
-                {categoryName}
-              </span>
-            )}
             <h3 className="font-bold text-slate-800 text-sm truncate leading-tight">
               {product.name}
             </h3>
@@ -296,15 +292,10 @@ export default function ProductCard({ product, categoryName, categoryId, balance
             )}
           </div>
         )}
+        {categoryName && <span className={`absolute top-2 right-2 max-w-[calc(100%-1rem)] truncate rounded-lg px-2 py-1 text-[11px] font-bold shadow-sm backdrop-blur-sm ${getCategoryColor(categoryId)}`}>{categoryName}</span>}
       </div>
 
       <div className="p-3 flex flex-col gap-2 flex-1">
-        {categoryName && (
-          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full w-fit ${getCategoryColor(categoryId)}`}>
-            {categoryName}
-          </span>
-        )}
-
         <h3 className="font-bold text-slate-800 text-sm leading-tight line-clamp-2">
           {product.name}
         </h3>

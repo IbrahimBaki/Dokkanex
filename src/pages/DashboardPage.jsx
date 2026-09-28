@@ -17,10 +17,12 @@ function Spinner() {
 
 function StatCard({ icon, label, value, valueClass = 'text-slate-800' }) {
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-4 flex flex-col gap-1">
-      <span className="text-2xl">{icon}</span>
-      <span className={`text-lg font-bold leading-tight ${valueClass}`}>{value}</span>
-      <span className="text-xs text-slate-500">{label}</span>
+    <div className="card p-4 sm:p-5 flex flex-col gap-3 transition-shadow hover:shadow-md">
+      <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-xl" aria-hidden="true">{icon}</span>
+      <div>
+        <span className={`block text-xl font-bold leading-tight sm:text-2xl ${valueClass}`}>{value}</span>
+        <span className="mt-1 block text-xs font-medium text-slate-500">{label}</span>
+      </div>
     </div>
   )
 }
@@ -30,11 +32,11 @@ function BucketRow({ emoji, label, count, total, colorClass }) {
   const pct = total > 0 ? (count / total) * 100 : 0
   return (
     <div>
-      <div className="flex justify-between text-xs text-slate-600 mb-1">
+      <div className="mb-1 flex justify-between text-xs text-slate-600">
         <span>{emoji} {label}</span>
         <span className="text-slate-400 shrink-0 mx-2">{count} {t('dashboard.of')} {total}</span>
       </div>
-      <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
+      <div className="h-2.5 overflow-hidden rounded-full bg-slate-100">
         <div className={`h-full rounded-full transition-all ${colorClass}`} style={{ width: `${pct}%` }} />
       </div>
     </div>
@@ -70,9 +72,12 @@ export default function DashboardPage() {
 
   if (totalProducts === 0) {
     return (
-      <div className="max-w-7xl mx-auto px-4 py-20 text-center text-slate-400">
-        <p className="text-lg font-medium">{t('dashboard.noData')}</p>
-        <p className="text-sm mt-1">{t('dashboard.addProductsFirst')}</p>
+      <div className="page-container py-20 text-center text-slate-400">
+        <div className="card mx-auto max-w-md p-8 sm:p-10">
+          <span className="mb-4 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-50 text-3xl" aria-hidden="true">📊</span>
+          <p className="text-lg font-semibold text-slate-700">{t('dashboard.noData')}</p>
+          <p className="mt-1 text-sm">{t('dashboard.addProductsFirst')}</p>
+        </div>
       </div>
     )
   }
@@ -128,11 +133,14 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-6 space-y-5">
-      <h1 className="text-xl font-bold text-slate-800">{t('dashboard.title')}</h1>
+    <div className="page-container space-y-6">
+      <header>
+        <h1 className="page-title">{t('dashboard.title')}</h1>
+        <p className="page-subtitle">{t('dashboard.subtitle')}</p>
+      </header>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
         <StatCard icon="📦" label={t('dashboard.totalProducts')} value={fmt(totalProducts)} />
         <StatCard icon="📁" label={t('dashboard.categories')} value={fmt(totalCategories)} />
         <StatCard
@@ -145,20 +153,20 @@ export default function DashboardPage() {
       </div>
 
       {/* Category chart + Margin buckets */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <div className="bg-white rounded-xl border border-slate-200 p-4">
-          <h2 className="text-sm font-semibold text-slate-700 mb-4">{t('dashboard.topCategories')}</h2>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <section className="card p-4 sm:p-5">
+          <h2 className="mb-5 text-base font-bold text-slate-800">{t('dashboard.topCategories')}</h2>
           {byCategory.length === 0 ? (
             <p className="text-sm text-slate-400">{t('dashboard.noCategoriesWithProducts')}</p>
           ) : (
             <div className="space-y-3">
               {byCategory.map(cat => (
                 <div key={cat.name}>
-                  <div className="flex justify-between text-xs text-slate-600 mb-1">
+                  <div className="mb-1 flex justify-between text-xs text-slate-600">
                     <span className="truncate ml-2">{cat.name}</span>
                     <span className="text-slate-400 shrink-0">{cat.count}</span>
                   </div>
-                  <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
+                  <div className="h-2.5 overflow-hidden rounded-full bg-slate-100">
                     <div
                       className="h-full bg-indigo-500 rounded-full transition-all"
                       style={{ width: `${(cat.count / maxCount) * 100}%` }}
@@ -168,10 +176,10 @@ export default function DashboardPage() {
               ))}
             </div>
           )}
-        </div>
+        </section>
 
-        <div className="bg-white rounded-xl border border-slate-200 p-4">
-          <h2 className="text-sm font-semibold text-slate-700 mb-4">{t('dashboard.marginDistribution')}</h2>
+        <section className="card p-4 sm:p-5">
+          <h2 className="mb-5 text-base font-bold text-slate-800">{t('dashboard.marginDistribution')}</h2>
           {pricedProducts.length === 0 ? (
             <p className="text-sm text-slate-400">{t('dashboard.noPricingData')}</p>
           ) : (
@@ -181,25 +189,27 @@ export default function DashboardPage() {
               <BucketRow emoji="🔴" label={t('dashboard.marginLow')}  count={buckets.low}  total={margins.length} colorClass="bg-red-400" />
             </div>
           )}
-        </div>
+        </section>
       </div>
 
       {/* Top 10 by margin */}
       {topProducts.length > 0 && (
-        <div className="bg-white rounded-xl border border-slate-200 p-4">
-          <h2 className="text-sm font-semibold text-slate-700 mb-4">{t('dashboard.top10Products')}</h2>
-          <div className="space-y-3">
+        <section className="card overflow-hidden">
+          <div className="border-b border-slate-100 px-4 py-4 sm:px-5">
+            <h2 className="text-base font-bold text-slate-800">{t('dashboard.top10Products')}</h2>
+          </div>
+          <div className="space-y-4 px-4 py-5 sm:px-5">
             {topProducts.map((p, i) => (
               <div key={p.id} className="flex items-center gap-3">
                 <span className="text-xs text-slate-400 w-5 shrink-0 text-center">{i + 1}</span>
                 <div className="flex-1 min-w-0">
-                  <div className="flex justify-between items-center mb-1">
+                  <div className="mb-1.5 flex items-center justify-between">
                     <span className="text-sm text-slate-700 truncate ml-2">{p.name}</span>
                     <span className={`text-xs font-bold shrink-0 ${marginTextColor(p.margin)}`}>
                       {p.margin.toFixed(1)}%
                     </span>
                   </div>
-                  <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                  <div className="h-2.5 overflow-hidden rounded-full bg-slate-100">
                     <div
                       className={`h-full rounded-full transition-all ${marginBarColor(p.margin)}`}
                       style={{ width: `${Math.min(p.margin, 100)}%` }}
@@ -209,7 +219,7 @@ export default function DashboardPage() {
               </div>
             ))}
           </div>
-        </div>
+        </section>
       )}
     </div>
   )

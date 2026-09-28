@@ -46,19 +46,37 @@ CREATE POLICY v2_categories_delete_own ON public.categories
 REVOKE INSERT, UPDATE, DELETE ON public.products FROM anon;
 REVOKE INSERT, UPDATE, DELETE ON public.categories FROM anon;
 
--- Do not migrate through existing cross-owner data silently. A violation must
--- be repaired deliberately before this protection can be deployed.
+-- Repair legacy shared categories conservatively before enforcing ownership.
+-- Each affected owner receives a private copy of the referenced category; no
+-- product or pre-existing category is deleted.
 DO $do$
+DECLARE
+  pair record;
+  private_category_id uuid;
 BEGIN
-  IF EXISTS (
-    SELECT 1
+  FOR pair IN
+    SELECT DISTINCT p.user_id AS product_owner, c.id AS original_category_id,
+      c.name AS category_name, c.created_at AS category_created_at
     FROM public.products p
     JOIN public.categories c ON c.id = p.category_id
     WHERE p.category_id IS NOT NULL
       AND c.user_id IS DISTINCT FROM p.user_id
+  LOOP
+    INSERT INTO public.categories (id, name, created_at, user_id)
+    VALUES (gen_random_uuid(), pair.category_name, pair.category_created_at, pair.product_owner)
+    RETURNING id INTO private_category_id;
+
+    UPDATE public.products
+    SET category_id = private_category_id
+    WHERE user_id = pair.product_owner
+      AND category_id = pair.original_category_id;
+  END LOOP;
+
+  IF EXISTS (
+    SELECT 1 FROM public.products p JOIN public.categories c ON c.id = p.category_id
+    WHERE p.category_id IS NOT NULL AND c.user_id IS DISTINCT FROM p.user_id
   ) THEN
-    RAISE EXCEPTION 'cannot apply product category ownership guard: existing cross-owner product/category rows require manual disposition'
-      USING ERRCODE = '23514';
+    RAISE EXCEPTION 'product/category ownership repair did not complete' USING ERRCODE = '23514';
   END IF;
 END;
 $do$;

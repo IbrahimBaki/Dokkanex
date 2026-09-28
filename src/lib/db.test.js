@@ -12,8 +12,8 @@ describe('current local database foundation', () => {
     await db.delete();
   });
 
-  it('retains V1 stores while exposing the V4 local inventory and purchase foundation', async () => {
-    expect(db.verno).toBe(4);
+  it('retains V1 stores while exposing the V6 local inventory, sales, and returns foundation', async () => {
+    expect(db.verno).toBe(6);
     expect(db.tables.map((table) => table.name).sort()).toEqual([
       'app_meta',
       'categories',
@@ -22,10 +22,15 @@ describe('current local database foundation', () => {
       'inventory_movements',
       'outbox_operations',
       'products',
+      'shop_profiles',
       'sync_queue',
       'sync_state',
       'v2_purchase_documents',
       'v2_purchase_lines',
+      'v2_sale_documents',
+      'v2_sale_lines',
+      'v2_sale_return_documents',
+      'v2_sale_return_lines',
     ]);
   });
 

@@ -94,13 +94,13 @@ export function replayPendingProjection(canonical, pendingMovements) {
 
 export async function getLatestInventoryTail(userId, productId, database = defaultDb) {
   const rows = await database.outbox_operations.where('user_id').equals(userId).toArray();
-  return rows.filter(row => !row.reconciled_at && ((row.entity_type === 'inventory_movement' && row.entity_id === productId) || (row.entity_type === 'purchase' && row.payload?.lines?.some(line => line.product_id === productId)))).sort((a,b)=>a.sequence-b.sequence).at(-1)?.operation_id ?? null;
+  return rows.filter(row => !row.reconciled_at && ((row.entity_type === 'inventory_movement' && row.entity_id === productId) || (['purchase', 'sale'].includes(row.entity_type) && row.payload?.lines?.some(line => line.product_id === productId)))).sort((a,b)=>a.sequence-b.sequence).at(-1)?.operation_id ?? null;
 }
 
 export async function getProjectableInventoryMovements(userId, productId, database = defaultDb) {
   const [movements, operations] = await Promise.all([database.inventory_movements.where('product_id').equals(productId).toArray(), database.outbox_operations.where('user_id').equals(userId).toArray()]);
   const byId=new Map(operations.map(operation=>[operation.operation_id,operation]));
-  return movements.filter(movement=>movement.user_id===userId&&movement.product_id===productId).map(movement=>({movement,operation:byId.get(movement.source_operation_id??movement.id)})).filter(({movement,operation})=>PROJECTABLE.has(operation?.status) || (operation?.entity_type === 'purchase' && operation.status === 'succeeded' && movement.status !== 'accepted')).sort((a,b)=>a.operation.sequence-b.operation.sequence).map(({movement,operation})=>({...movement,status:PROJECTABLE.has(operation.status) ? operation.status : 'pending',sequence:operation.sequence}));
+  return movements.filter(movement=>movement.user_id===userId&&movement.product_id===productId).map(movement=>({movement,operation:byId.get(movement.source_operation_id??movement.id)})).filter(({movement,operation})=>PROJECTABLE.has(operation?.status) || (['purchase', 'sale'].includes(operation?.entity_type) && operation.status === 'succeeded' && movement.status !== 'accepted')).sort((a,b)=>a.operation.sequence-b.operation.sequence).map(({movement,operation})=>({...movement,status:PROJECTABLE.has(operation.status) ? operation.status : 'pending',sequence:operation.sequence}));
 }
 
 async function unresolvedProductCreateDependency(userId, productId, database) {

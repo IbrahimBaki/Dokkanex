@@ -169,6 +169,31 @@ async function reconcileAcceptedPurchaseOperation(userId, operation, receipt, da
   });
 }
 
+async function postSale(client, operation) {
+  const payload = operation.payload ?? {};
+  return client.rpc("post_sale_v2", {
+    p_sale_id: operation.operation_id, p_sold_at: payload.sold_at, p_payment_method: payload.payment_method ?? "cash",
+    p_customer_name: payload.customer_name ?? null, p_notes: payload.notes ?? null, p_profile_snapshot: payload.profile_snapshot ?? {},
+    p_allow_negative: Boolean(payload.allow_negative),
+    p_lines: (payload.lines ?? []).map((line) => ({ line_id: line.id, product_id: line.product_id, movement_id: line.movement_id, quantity: line.quantity, unit_price: line.unit_price, discount_amount: line.discount_amount })),
+  });
+}
+
+async function postShopProfile(client, operation) {
+  return client.from('v2_shop_profiles').upsert(operation.payload).select().single();
+}
+async function postSaleReturn(client, operation) { const p = operation.payload; return client.rpc('post_sale_return_v2', { p_return_id: operation.operation_id, p_sale_id: p.sale_id, p_returned_at: p.returned_at, p_reason: p.reason ?? null, p_lines: p.lines.map((line) => ({ line_id: line.id, sale_line_id: line.sale_line_id, movement_id: line.movement_id, quantity: line.quantity })) }); }
+
+async function reconcileAcceptedSaleOperation(userId, operation, receipt, database) {
+  await database.transaction("rw", database.outbox_operations, database.v2_sale_documents, async () => {
+    const current = await database.outbox_operations.get(operation.operation_id);
+    const document = await database.v2_sale_documents.get(operation.entity_id);
+    if (!current || current.user_id !== userId || !document || document.user_id !== userId) throw new Error("Sale operation ownership changed");
+    await database.v2_sale_documents.update(operation.entity_id, { invoice_number: receipt.invoice_number ?? document.invoice_number, total_amount: receipt.total_amount ?? document.total_amount, updated_at: nowIso() });
+    await database.outbox_operations.update(operation.operation_id, { status: "succeeded", server_receipt: receipt, reconciled_at: nowIso(), updated_at: nowIso() });
+  });
+}
+
 async function pushCategory(client, operation) {
   const payload = operation.payload ?? {};
   if (operation.action === 'create') return client.from('categories').insert(payload).select().single();
@@ -271,6 +296,9 @@ async function pushOperation(userId, operation, { client, database, isCurrent })
     let response;
     if (operation.entity_type === 'inventory_movement') response = await postInventory(client, syncing);
     else if (operation.entity_type === 'purchase' && operation.action === 'post') response = await postPurchase(client, syncing);
+    else if (operation.entity_type === 'sale' && operation.action === 'post') response = await postSale(client, syncing);
+    else if (operation.entity_type === 'shop_profile' && operation.action === 'upsert') response = await postShopProfile(client, syncing);
+    else if (operation.entity_type === 'sale_return' && operation.action === 'post') response = await postSaleReturn(client, syncing);
     else if (operation.entity_type === 'product' && operation.action === 'create') response = await client.from('products').insert(operation.payload).select().single();
     else if (operation.entity_type === 'image_upload') return await pushImageUpload(userId, syncing, client, database, isCurrent);
     else if (operation.entity_type === 'image_delete') return await pushImageDelete(userId, syncing, client, database, isCurrent);
@@ -300,6 +328,18 @@ async function pushOperation(userId, operation, { client, database, isCurrent })
         throw Object.assign(new Error('Invalid purchase receipt'), { code: '22023' });
       }
       await reconcileAcceptedPurchaseOperation(userId, operation, result, database);
+    } else if (operation.entity_type === 'sale' && operation.action === 'post') {
+      if (result?.status !== 'accepted' || result.sale_id !== operation.operation_id) throw Object.assign(new Error('Invalid sale receipt'), { code: '22023' });
+      await reconcileAcceptedSaleOperation(userId, operation, result, database);
+    } else if (operation.entity_type === 'shop_profile' && operation.action === 'upsert') {
+      if (!result || result.user_id !== userId) throw Object.assign(new Error('Invalid shop profile receipt'), { code: '22023' });
+      await database.transaction('rw', database.shop_profiles, database.outbox_operations, async () => {
+        await database.shop_profiles.put(result);
+        await database.outbox_operations.update(operation.operation_id, { status: 'succeeded', server_receipt: result, reconciled_at: nowIso(), updated_at: nowIso() });
+      });
+    } else if (operation.entity_type === 'sale_return' && operation.action === 'post') {
+      if (result?.status !== 'accepted' || result.return_id !== operation.operation_id) throw Object.assign(new Error('Invalid return receipt'), { code: '22023' });
+      await transitionOutboxOperation(operation.operation_id, 'succeeded', { server_receipt: result, reconciled_at: nowIso() }, database);
     } else if (operation.entity_type === 'product' && operation.action === 'create') {
       if (!await isCurrent()) return { cancelled: true };
       await database.transaction('rw', database.products, database.outbox_operations, async () => {
@@ -377,14 +417,19 @@ async function pushOperation(userId, operation, { client, database, isCurrent })
 
 export async function pullUserState(userId, { client, database = defaultDb, isCurrent = async () => true }) {
   if (!await isCurrent()) return;
-  const [products, categories, balances, cursorState] = await Promise.all([
+  const [products, categories, balances, sales, saleLines, saleReturns, saleReturnLines, profile, cursorState] = await Promise.all([
     client.from('products').select('*').eq('user_id', userId),
     client.from('categories').select('*').eq('user_id', userId),
     client.from('inventory_balances').select('*').eq('user_id', userId),
+    client.from('v2_sale_documents').select('*').eq('user_id', userId),
+    client.from('v2_sale_lines').select('*').eq('user_id', userId),
+    client.from('v2_sale_return_documents').select('*').eq('user_id', userId),
+    client.from('v2_sale_return_lines').select('*').eq('user_id', userId),
+    client.from('v2_shop_profiles').select('*').eq('user_id', userId),
     database.sync_state.get(stateId(userId, 'movement_cursor')),
   ]);
   if (!await isCurrent()) return;
-  for (const response of [products, categories, balances]) if (response.error) throw response.error;
+  for (const response of [products, categories, balances, sales, saleLines, saleReturns, saleReturnLines, profile]) if (response.error) throw response.error;
   const cursor = Number(cursorState?.value ?? 0);
   const movements = await client.from('stock_movements').select('*').eq('user_id', userId).neq('movement_type', 'legacy').gt('server_sequence', cursor).order('server_sequence', { ascending: true });
   if (movements.error) throw movements.error;
@@ -395,7 +440,7 @@ export async function pullUserState(userId, { client, database = defaultDb, isCu
     if ((await proveLegacyQueueOwnership(row, userId, database)).proven) legacyProductIds.add(row.record_id);
   }
   if (!await isCurrent()) return;
-  await database.transaction('rw', database.products, database.categories, database.inventory_balances, database.inventory_movements, database.outbox_operations, database.sync_state, async () => {
+  await database.transaction('rw', database.products, database.categories, database.inventory_balances, database.inventory_movements, database.v2_sale_documents, database.v2_sale_lines, database.v2_sale_return_documents, database.v2_sale_return_lines, database.shop_profiles, database.outbox_operations, database.sync_state, async () => {
     const unresolved = await database.outbox_operations.where('user_id').equals(userId).toArray();
     const pendingProductIds = new Set(unresolved
       .filter((row) => ((row.entity_type === 'product' && row.action === 'create') || ['product_metadata', 'product_archive', 'image_upload', 'image_delete'].includes(row.entity_type) || (row.entity_type === 'legacy_queue' && row.source_table === 'products')) && !row.reconciled_at)
@@ -409,6 +454,11 @@ export async function pullUserState(userId, { client, database = defaultDb, isCu
     const remoteCategoryIds = new Set(categories.data.map((row) => row.id));
     for (const row of categories.data) await database.categories.put({ ...row, user_id: userId });
     for (const local of await database.categories.where('user_id').equals(userId).toArray()) if (!remoteCategoryIds.has(local.id) && !pendingCategoryIds.has(local.id)) await database.categories.delete(local.id);
+    for (const row of sales.data) await database.v2_sale_documents.put({ ...row, user_id: userId, updated_at: row.created_at });
+    for (const row of saleLines.data) await database.v2_sale_lines.put({ ...row, user_id: userId });
+    for (const row of saleReturns.data) await database.v2_sale_return_documents.put({ ...row, user_id: userId });
+    for (const row of saleReturnLines.data) await database.v2_sale_return_lines.put({ ...row, user_id: userId });
+    if (profile.data?.[0]) await database.shop_profiles.put(profile.data[0]);
     for (const row of balances.data) await database.inventory_balances.put({
       ...(await database.inventory_balances.get(row.product_id) ?? {}), product_id: row.product_id, user_id: userId,
       server_initialized: true, server_quantity: normalizeQuantity(row.current_quantity), server_revision: Number(row.revision),

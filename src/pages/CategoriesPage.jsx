@@ -100,16 +100,16 @@ export default function CategoriesPage() {
   }
 
   return (
-    <div className="page-container">
-      <div className="flex items-center justify-between mb-6">
-        <span className="text-slate-500 text-sm">{t('categories.count', { count: categories.length })}</span>
-        <h1 className="text-xl font-bold text-slate-800">{t('categories.title')}</h1>
+    <div className="page-container max-w-3xl">
+      <div className="mb-6 flex items-end justify-between gap-3">
+        <div><h1 className="page-title">{t('categories.title')}</h1><p className="page-subtitle">نظّم المنتجات في مجموعات واضحة لسهولة البحث والتصدير.</p></div>
+        <span className="shrink-0 rounded-full bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-600">{t('categories.count', { count: categories.length })}</span>
       </div>
 
       {/* Add Form */}
-      <div className="card p-4 mb-5">
+      <div className="card mb-5 p-4 sm:p-5">
         <p className="text-sm font-semibold text-slate-700 mb-3">{t('categories.addNew')}</p>
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row">
           <input
             type="text"
             value={newName}
@@ -124,7 +124,7 @@ export default function CategoriesPage() {
             type="button"
             onClick={handleAdd}
             disabled={adding}
-            className="btn-primary whitespace-nowrap flex items-center gap-2 px-5"
+            className="btn-primary whitespace-nowrap flex items-center justify-center gap-2 px-5"
           >
             {adding ? (
               <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -168,7 +168,7 @@ export default function CategoriesPage() {
       ) : (
         <div className="card divide-y divide-slate-100 overflow-hidden">
           {categories.map(cat => (
-            <div key={cat.id} className="flex items-center gap-3 px-4 py-3">
+            <div key={cat.id} className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-slate-50">
               <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center shrink-0">
                 <svg className="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}

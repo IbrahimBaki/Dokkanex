@@ -5,6 +5,8 @@
 @layer base {
   html, body {
     font-family: 'Segoe UI', 'Tahoma', 'Arial', sans-serif;
+    background: #f8fafc;
+    color: #0f172a;
   }
   html {
     scroll-behavior: smooth;
@@ -38,7 +40,13 @@
     @apply bg-white rounded-2xl shadow-sm border border-slate-200;
   }
   .page-container {
-    @apply max-w-7xl mx-auto px-4 py-6;
+    @apply max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8;
+  }
+  .page-title {
+    @apply text-2xl sm:text-3xl font-bold tracking-tight text-slate-900;
+  }
+  .page-subtitle {
+    @apply mt-1.5 text-sm text-slate-500;
   }
 }
 
@@ -84,3 +92,31 @@
   padding-right: 0.75rem;
   padding-left: 2.5rem;
 }
+
+/* Global interaction polish, shared by web/PWA and Electron. */
+button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 3px solid rgb(199 210 254); outline-offset: 2px;
+}
+@media (max-width: 640px) {
+  .card { border-radius: 1rem; }
+  .input-field { min-height: 44px; }
+}
+
+@media print {
+  body * { visibility: hidden; }
+  .invoice-print, .invoice-print * { visibility: visible; }
+  .invoice-print { position: absolute; inset: 0; width: 100%; padding: 0; }
+  .no-print { display: none !important; }
+}
+
+/* Keep floating product actions clear of the desktop sidebar. */
+@media (min-width: 768px) {
+  .floating-add-button { right: 19rem; }
+  .floating-selection-bar { right: 19rem; }
+  html[data-sidebar-collapsed="true"] .floating-add-button { right: 6rem; }
+  html[data-sidebar-collapsed="true"] .floating-selection-bar { right: 6rem; }
+}
+
+@keyframes float { 0%, 100% { transform: translateY(0) rotate(0deg) } 50% { transform: translateY(-10px) rotate(-.5deg) } }
+@media (prefers-reduced-motion: reduce) { .animate-\[float_7s_ease-in-out_infinite\], .animate-pulse { animation: none !important; } }

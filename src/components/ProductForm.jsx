@@ -16,6 +16,7 @@ export default function ProductForm({ initialData, onSuccess, onCancel }) {
   const { t } = useTranslation()
   const { refreshMeta, handleSync } = useSync()
   const [name, setName] = useState(initialData?.name || '')
+  const [sku, setSku] = useState(initialData?.sku || '')
   const [wholesalePrice, setWholesalePrice] = useState(String(initialData?.wholesale_price ?? ''))
   const [sellingPrice, setSellingPrice] = useState(String(initialData?.selling_price ?? ''))
   const [categoryId, setCategoryId] = useState(initialData?.category_id || '')
@@ -131,6 +132,7 @@ export default function ProductForm({ initialData, onSuccess, onCancel }) {
     try {
       const payload = {
         name: name.trim(),
+        sku: sku.trim() || null,
         wholesale_price: parseFloat(wholesalePrice),
         selling_price: parseFloat(sellingPrice),
         category_id: categoryId || null,
@@ -187,6 +189,11 @@ export default function ProductForm({ initialData, onSuccess, onCancel }) {
           className="input-field"
           disabled={loading}
         />
+      </div>
+      <div>
+        <label className="form-label">الباركود / SKU</label>
+        <input type="text" value={sku} onChange={e => setSku(e.target.value)} placeholder="امسح الباركود أو اكتبه" className="input-field" disabled={loading || Boolean(initialData?.id)} />
+        {initialData?.id && <p className="mt-1 text-xs text-slate-500">تعديل باركود منتج موجود سيُتاح في خطوة التحديث التالية.</p>}
       </div>
 
       {/* Image Upload */}

@@ -14,6 +14,8 @@ import EditProductPage from './pages/EditProductPage'
 import CategoriesPage from './pages/CategoriesPage'
 import DashboardPage from './pages/DashboardPage'
 import InventoryPage from './pages/InventoryPage'
+import SalesPage from './pages/SalesPage'
+import ShopSettingsPage from './pages/ShopSettingsPage'
 
 function RootRoute() {
   const { user, loading } = useAuth()
@@ -38,6 +40,8 @@ export default function App() {
               <Route path="/edit/:id" element={<EditProductPage />} />
               <Route path="/categories" element={<CategoriesPage />} />
               <Route path="/inventory" element={<InventoryPage />} />
+              <Route path="/sales" element={<SalesPage />} />
+              <Route path="/settings" element={<ShopSettingsPage />} />
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="*" element={<Navigate to="/products" replace />} />
             </Route>

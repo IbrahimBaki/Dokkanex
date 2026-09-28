@@ -69,7 +69,7 @@ export default function EditProductPage() {
           </svg>
         </button>
         <div>
-          <h1 className="text-xl font-bold text-slate-800">{t('editProduct.title')}</h1>
+          <h1 className="page-title">{t('editProduct.title')}</h1>
           {product.updated_at || product.created_at ? (
             <p className="text-xs text-slate-400 mt-0.5">
               {t('editProduct.lastEdited', { time: timeAgo(product.updated_at || product.created_at, i18n.language) })}

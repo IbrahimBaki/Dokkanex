@@ -8,12 +8,17 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      injectRegister: 'auto',
       includeAssets: ['icons/*.png', 'icons/*.svg', 'files/*.svg'],
       manifest: {
+        id: '/',
+        scope: '/',
+        display_override: ['window-controls-overlay', 'standalone'],
         name: 'DokkanX | دكان إكس',
         short_name: 'DokkanX',
-        description: 'تطبيق إدارة المنتجات والفئات',
-        theme_color: '#1E3A5F',
+        description: 'إدارة أبسط لدكانك — منتجات، مخزون، ومبيعات',
+        categories: ['business', 'productivity'],
+        theme_color: '#4F46E5',
         background_color: '#f8fafc',
         display: 'standalone',
         orientation: 'portrait',
@@ -31,7 +36,13 @@ export default defineConfig({
             src: 'icons/icon-512.png',
             sizes: '512x512',
             type: 'image/png',
-            purpose: 'any maskable'
+            purpose: 'any'
+          },
+          {
+            src: 'icons/icon-512-maskable.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable'
           }
         ]
       },

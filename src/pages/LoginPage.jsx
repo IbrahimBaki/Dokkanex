@@ -40,26 +40,26 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-sm">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#14103A] p-4">
+      <div className="pointer-events-none absolute -right-24 -top-24 h-96 w-96 rounded-full bg-indigo-500/35 blur-3xl" /><div className="pointer-events-none absolute -bottom-32 -left-24 h-96 w-96 rounded-full bg-lime-400/15 blur-3xl" /><div className="relative z-10 w-full max-w-md">
 
         <div className="flex justify-end mb-2">
           <button
             onClick={toggleLang}
-            className="px-3 py-1 rounded-lg text-xs font-semibold text-slate-500 hover:bg-slate-200 hover:text-indigo-600 transition-colors border border-slate-200 bg-white"
+            className="rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-xs font-bold text-white/85 transition hover:bg-white/20"
           >
             {t('nav.lang')}
           </button>
         </div>
 
-        <div className="text-center mb-8">
-          <img src={logoMark} alt="DokkanX" className="w-16 h-16 mx-auto mb-3 object-contain" />
-          <h1 className="text-2xl font-bold text-slate-800">دكان <span className="text-amber-500">إكس</span></h1>
-          <p className="text-slate-500 text-sm mt-1">{t('auth.brandSub')}</p>
+        <div className="mb-7 text-center">
+          <img src={logoMark} alt="DokkanX" className="mx-auto mb-4 h-20 w-20 rounded-3xl bg-white/10 p-2 shadow-2xl ring-1 ring-white/20" />
+          <p className="text-sm font-bold tracking-wide text-lime-200">دكان إكس · DokkanX</p><h1 className="mt-2 text-2xl font-black text-white">مرحباً بعودتك</h1><p className="mt-2 text-sm text-indigo-100">تابع إدارة متجرك من حيث توقفت.</p>
+
         </div>
 
-        <div className="card p-6">
-          <h2 className="text-lg font-bold text-slate-800 mb-5 text-center">{t('auth.login.title')}</h2>
+        <div className="rounded-3xl border border-white/70 bg-white/95 p-6 shadow-2xl shadow-slate-950/25 backdrop-blur sm:p-8">
+          <h2 className="mb-6 text-center text-xl font-black text-slate-900">{t('auth.login.title')}</h2>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
@@ -105,7 +105,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="btn-primary w-full flex items-center justify-center gap-2"
+              className="btn-primary flex w-full items-center justify-center gap-2 py-3"
             >
               {loading && (
                 <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">

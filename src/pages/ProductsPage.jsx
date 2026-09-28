@@ -142,8 +142,8 @@ export default function ProductsPage() {
   return (
     <div className="page-container">
       {/* Header */}
-      <div className="flex items-center justify-between mb-5">
-        <div className="flex items-center gap-2">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex w-full items-center gap-2 sm:w-auto">
           {selectionMode ? (
             <>
               <button
@@ -201,7 +201,7 @@ export default function ProductsPage() {
             </>
           )}
         </div>
-        <h1 className="text-xl font-bold text-slate-800">
+        <h1 className="page-title sm:order-first">
           {selectionMode && selectedIds.size > 0
             ? t('products.selectedCount', { count: selectedIds.size })
             : t('products.title')}
@@ -350,12 +350,13 @@ export default function ProductsPage() {
       {/* FAB */}
       <button
         onClick={() => navigate('/add')}
-        className="fixed bottom-6 left-4 w-14 h-14 bg-indigo-600 text-white rounded-full shadow-lg shadow-indigo-300 flex items-center justify-center hover:bg-indigo-700 active:scale-95 transition-all z-30"
+        className="fixed bottom-5 floating-add-button sm:w-auto sm:px-4 w-14 h-14 bg-indigo-600 text-white rounded-full sm:rounded-xl shadow-lg shadow-indigo-300 flex items-center justify-center gap-2 hover:bg-indigo-700 active:scale-95 transition-all z-30"
         aria-label={t('products.addProduct')}
       >
         <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
         </svg>
+        <span className="hidden sm:inline font-semibold">{t('products.addProduct')}</span>
       </button>
 
       {/* Delete Confirmation */}
@@ -379,7 +380,7 @@ export default function ProductsPage() {
 
       {/* Export floating bar */}
       {selectionMode && selectedIds.size > 0 && (
-        <div className="fixed bottom-6 inset-x-4 z-30 flex items-center justify-between gap-3 bg-indigo-600 text-white rounded-2xl px-4 py-3 shadow-xl shadow-indigo-300">
+        <div className="fixed bottom-6 left-4 right-4 floating-selection-bar z-30 flex items-center justify-between gap-3 bg-indigo-600 text-white rounded-2xl px-4 py-3 shadow-xl shadow-indigo-300">
           <span className="text-sm font-semibold">{t('products.selectedCount', { count: selectedIds.size })}</span>
           <button
             onClick={() => setShowExport(true)}
